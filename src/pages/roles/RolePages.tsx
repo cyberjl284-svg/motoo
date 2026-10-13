@@ -1,21 +1,23 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
   LayoutDashboard, FileSearch, FileText, CalendarDays, Plus, CheckCircle,
   XCircle, Clock, Calendar, PenTool, FileCheck, Upload, Trash2, Edit,
-  ArrowLeft, Eye, Send, AlertTriangle, Users, Search,
+  Eye, Send, AlertTriangle, Users, Search, ArrowRight, TrendingUp,
+  TrendingDown, Bell, Printer, FileX,
 } from 'lucide-react';
 import { mockSecretary, mockChairperson, mockOffice, mockViceSecretary } from '@/api/mock';
 import { minutesApi, type HydratedMinute, type MinuteAttendance, type MinuteMember, type CreateMinutePayload, type MinuteStatus } from '@/api/minutes';
 import { queryKeys } from '@/lib/query';
 import {
-  Card, PageHeader, StatCard, Badge, Button, LoadingState, ErrorState,
+  Card, PageHeader, Badge, Button, LoadingState, ErrorState,
   EmptyState, Modal, Input, Textarea, Select, ConfirmDialog,
 } from '@/components/ui';
-import { formatDate, formatDateTime, relativeTime, classNames, formatCurrency } from '@/lib/format';
+import { formatDate, formatDateTime, relativeTime, classNames, formatCurrency, initials } from '@/lib/format';
 import { useAuth } from '@/auth/AuthContext';
 
-// ---- Status helpers ----
+// ─── Status helpers ──────────────────────────────────────────────────────────
 const STATUS_LABELS: Record<MinuteStatus, string> = {
   draft: 'Draft',
   submitted_to_secretary: 'Submitted to Secretary',
@@ -37,12 +39,11 @@ const STATUS_BADGE: Record<MinuteStatus, string> = {
 function statusLabel(s: string): string {
   return STATUS_LABELS[s as MinuteStatus] || s.replace(/_/g, ' ');
 }
-
 function statusBadge(s: string): string {
   return STATUS_BADGE[s as MinuteStatus] || 'draft';
 }
 
-// ---- Attendance bucket type ----
+// ─── Attendance bucket ────────────────────────────────────────────────────────
 type AttendanceBucket = 'PRESENT' | 'ABSENT_WITH_APOLOGY' | 'ABSENT';
 
 const BUCKET_LABELS: Record<AttendanceBucket, string> = {
@@ -52,57 +53,172 @@ const BUCKET_LABELS: Record<AttendanceBucket, string> = {
 };
 
 const BUCKET_COLORS: Record<AttendanceBucket, string> = {
-  PRESENT: 'bg-success-100 text-success-700 border-success-200',
-  ABSENT_WITH_APOLOGY: 'bg-warning-100 text-warning-700 border-warning-200',
-  ABSENT: 'bg-error-100 text-error-700 border-error-200',
+  PRESENT: 'bg-success-50 text-success-700 border-success-200',
+  ABSENT_WITH_APOLOGY: 'bg-warning-50 text-warning-700 border-warning-200',
+  ABSENT: 'bg-error-50 text-error-700 border-error-200',
 };
 
-// ============================================================
-// Secretary Dashboard
-// ============================================================
+// ─── Shared premium KPI card ──────────────────────────────────────────────────
+function KpiCard({ label, value, icon: Icon, accent, delta, positive }: {
+  label: string; value: string | number; icon: typeof Users;
+  accent: string; delta?: string; positive?: boolean;
+}) {
+  return (
+    <div className="group relative bg-white rounded-n26-card border border-neutral-100 p-5 transition-all hover:shadow-float hover:border-neutral-200">
+      <div className="flex items-start justify-between mb-4">
+        <div className={classNames('w-10 h-10 rounded-xl flex items-center justify-center', accent)}>
+          <Icon size={20} />
+        </div>
+        {delta && (
+          <span className={classNames(
+            'flex items-center gap-0.5 text-xs font-semibold rounded-full px-2 py-0.5',
+            positive ? 'bg-success-50 text-success-700' : 'bg-error-50 text-error-700',
+          )}>
+            {positive ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+            {delta}
+          </span>
+        )}
+      </div>
+      <p className="text-2xl font-bold text-neutral-900 tracking-tight">{value}</p>
+      <p className="mt-1 text-sm text-neutral-500">{label}</p>
+    </div>
+  );
+}
+
+// ─── Section header ───────────────────────────────────────────────────────────
+function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <h3 className="text-base font-bold text-neutral-900">{title}</h3>
+      {action}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SECRETARY DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════════
 export function SecretaryDashboard() {
+  const { user } = useAuth();
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.secretaryDashboard,
     queryFn: () => mockSecretary.dashboard(),
   });
   if (isLoading) return <LoadingState />;
   const d = data!;
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  })();
+
+  const quickActions = [
+    { label: 'New Minutes', icon: FileText, to: '/secretary/meeting-minutes', accent: 'bg-primary-50 text-primary-600' },
+    { label: 'Review Queue', icon: FileSearch, to: '/secretary/minutes-review', accent: 'bg-warning-50 text-warning-600' },
+    { label: 'Schedule Meeting', icon: CalendarDays, to: '/secretary/meeting-scheduling', accent: 'bg-secondary-50 text-secondary-600' },
+    { label: 'Upload Signature', icon: PenTool, to: '/secretary/signature', accent: 'bg-accent-50 text-accent-600' },
+  ];
+
   return (
-    <div>
-      <PageHeader title="Secretary Dashboard" subtitle="Meeting minutes and scheduling overview" icon={<LayoutDashboard size={20} />} />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Pending Review" value={d.pending_minutes} icon={<Clock size={18} />} color="warning" />
-        <StatCard label="Approved" value={d.approved_minutes} icon={<CheckCircle size={18} />} color="success" />
-        <StatCard label="Upcoming Meetings" value={d.upcoming_meetings} icon={<CalendarDays size={18} />} />
-        <StatCard label="Total Minutes" value={d.total_minutes} icon={<FileText size={18} />} color="secondary" />
-      </div>
-      <Card className="p-5 mt-4">
-        <h3 className="text-sm font-bold mb-3">Recent Minutes</h3>
-        <div className="space-y-2">
-          {d.recent_minutes.map((m: any) => (
-            <div key={m.id} className="flex items-center justify-between py-2 border-b border-neutral-50 last:border-0">
-              <div>
-                <p className="text-sm font-medium text-neutral-700">{m.title}</p>
-                <p className="text-xs text-neutral-400">{formatDate(m.meeting_date)} - {m.attendees} attendees</p>
-              </div>
-              <Badge status={statusBadge(m.status)}>{statusLabel(m.status)}</Badge>
-            </div>
-          ))}
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900 tracking-tight">{greeting}, {user?.name?.split(' ')[0] ?? 'Secretary'}</h1>
+          <p className="mt-1 text-sm text-neutral-500">Manage minutes, reviews, and meeting schedules.</p>
         </div>
-      </Card>
+        <div className="flex items-center gap-3">
+          <button className="relative p-2.5 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 transition-colors">
+            <Bell size={18} className="text-neutral-500" />
+            {d.pending_minutes > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-error-500 rounded-full ring-2 ring-white" />}
+          </button>
+          <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2">
+            <div className="w-9 h-9 rounded-full bg-primary-500 text-white text-sm font-bold flex items-center justify-center">
+              {initials(user?.name ?? 'SC')}
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-sm font-semibold text-neutral-800">{user?.name ?? 'Secretary'}</p>
+              <p className="text-xs text-neutral-400">Secretary</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard label="Pending Review" value={d.pending_minutes} icon={Clock} accent="bg-warning-50 text-warning-600" delta="Action" positive={false} />
+        <KpiCard label="Approved" value={d.approved_minutes} icon={CheckCircle} accent="bg-success-50 text-success-600" delta="+3" positive />
+        <KpiCard label="Upcoming Meetings" value={d.upcoming_meetings} icon={CalendarDays} accent="bg-secondary-50 text-secondary-600" />
+        <KpiCard label="Total Minutes" value={d.total_minutes} icon={FileText} accent="bg-primary-50 text-primary-600" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card className="p-6">
+          <SectionHeader title="Quick Actions" />
+          <div className="grid grid-cols-2 gap-3">
+            {quickActions.map(a => (
+              <Link key={a.label} to={a.to} className="group flex flex-col items-start gap-2 p-3.5 rounded-xl border border-neutral-100 hover:border-neutral-200 hover:shadow-float transition-all">
+                <div className={classNames('w-9 h-9 rounded-lg flex items-center justify-center', a.accent)}>
+                  <a.icon size={17} />
+                </div>
+                <span className="text-xs font-medium text-neutral-700 group-hover:text-neutral-900">{a.label}</span>
+              </Link>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-6 lg:col-span-2">
+          <SectionHeader title="Recent Minutes" action={
+            <Link to="/secretary/meeting-minutes" className="text-xs font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1">
+              View all <ArrowRight size={12} />
+            </Link>
+          } />
+          <div className="space-y-1">
+            {d.recent_minutes.map((m: any) => (
+              <div key={m.id} className="flex items-center justify-between p-2.5 -mx-2.5 rounded-xl hover:bg-neutral-50 transition-colors">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-neutral-800 truncate">{m.title}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">{formatDate(m.meeting_date)} · {m.attendees} attendees</p>
+                </div>
+                <Badge status={statusBadge(m.status)}>{statusLabel(m.status)}</Badge>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {d.upcoming && d.upcoming.length > 0 && (
+        <Card className="p-6">
+          <SectionHeader title="Upcoming Meetings" action={
+            <Link to="/secretary/meeting-scheduling" className="text-xs font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1">
+              View all <ArrowRight size={12} />
+            </Link>
+          } />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {d.upcoming.slice(0, 3).map((m: any) => (
+              <div key={m.id} className="p-4 rounded-xl border border-neutral-100 hover:border-neutral-200 transition-colors">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center">
+                    <CalendarDays size={16} className="text-primary-600" />
+                  </div>
+                  <span className="text-xs text-neutral-400">{formatDate(m.date)}</span>
+                </div>
+                <p className="text-sm font-semibold text-neutral-800">{m.title}</p>
+                <p className="text-xs text-neutral-400 mt-0.5">{m.time} · {m.location}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
 
-// ============================================================
-// Minutes Authoring (shared by Secretary and Vice Secretary)
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  MINUTES AUTHORING (shared by Secretary and Vice Secretary)
+// ═══════════════════════════════════════════════════════════════════════════════
 interface MinutesAuthoringProps {
   role: 'secretary' | 'vice-secretary';
   title: string;
   subtitle: string;
-  filter: 'mine';
-  submitLabel: string;
   queryKey: readonly unknown[];
   fetchFn: () => Promise<any[]>;
   createFn: (data: CreateMinutePayload) => Promise<any>;
@@ -126,27 +242,17 @@ export function MinutesAuthoring({
 
   const createMut = useMutation({
     mutationFn: (payload: CreateMinutePayload) => createFn(payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey });
-      setShowForm(false);
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey }); setShowForm(false); },
   });
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<CreateMinutePayload> }) => updateFn(id, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey });
-      setShowForm(false);
-      setEditingId(null);
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey }); setShowForm(false); setEditingId(null); },
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => deleteFn(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey });
-      setDeleteId(null);
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey }); setDeleteId(null); },
   });
 
   const submitMut = useMutation({
@@ -160,64 +266,77 @@ export function MinutesAuthoring({
 
   const items = data || [];
 
-  const handleEdit = (m: any) => {
-    setEditingId(m.id);
-    setShowForm(true);
-  };
-
-  const handleCreate = () => {
-    setEditingId(null);
-    setShowForm(true);
-  };
-
   if (isLoading) return <LoadingState />;
   if (isError) return <ErrorState message="Failed to load minutes" onRetry={refetch} />;
 
-  return (
-    <div>
-      <PageHeader
-        title={title}
-        subtitle={subtitle}
-        icon={<FileText size={20} />}
-        action={<Button onClick={handleCreate}><Plus size={16} /> New Minutes</Button>}
-      />
+  const draftCount = items.filter((m: any) => m.status === 'draft' || m.status === 'rejected_by_secretary' || m.status === 'rejected').length;
+  const submittedCount = items.filter((m: any) => m.status === 'submitted_to_secretary' || m.status === 'pending_chairperson_approval').length;
+  const approvedCount = items.filter((m: any) => m.status === 'approved').length;
 
-      <Card className="p-4">
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900 tracking-tight">{title}</h1>
+          <p className="mt-1 text-sm text-neutral-500">{subtitle}</p>
+        </div>
+        <Button onClick={() => { setEditingId(null); setShowForm(true); }}>
+          <Plus size={16} /> New Minutes
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <KpiCard label="Drafts" value={draftCount} icon={FileText} accent="bg-neutral-100 text-neutral-500" />
+        <KpiCard label="In Review" value={submittedCount} icon={Clock} accent="bg-warning-50 text-warning-600" />
+        <KpiCard label="Approved" value={approvedCount} icon={CheckCircle} accent="bg-success-50 text-success-600" />
+      </div>
+
+      <Card className="p-6">
+        <SectionHeader title="All Minutes" />
         {items.length === 0 ? (
           <EmptyState icon={<FileText size={24} />} title="No minutes found" message="Create your first meeting minutes to get started." />
         ) : (
-          <div className="space-y-3">
-            {items.map((m: any) => (
-              <div key={m.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-neutral-100">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="font-semibold text-neutral-800">{m.title}</p>
-                    {m.meeting_type === 'executive' && (
-                      <span className="text-2xs font-bold uppercase text-secondary-600 bg-secondary-50 px-1.5 py-0.5 rounded">Executive</span>
+          <div className="space-y-1">
+            {items.map((m: any) => {
+              const canEdit = m.status === 'draft' || m.status === 'rejected_by_secretary' || m.status === 'rejected';
+              return (
+                <div key={m.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 -mx-3 rounded-xl hover:bg-neutral-50 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-semibold text-neutral-800">{m.title}</p>
+                      {m.meeting_type === 'executive' && (
+                        <span className="text-2xs font-bold uppercase text-secondary-600 bg-secondary-50 px-1.5 py-0.5 rounded">Executive</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-neutral-400">{formatDate(m.meeting_date)} · {m.attendees} attendees · By {m.prepared_by}</p>
+                    {m.rejection_notes && (
+                      <p className="text-xs text-error-600 mt-1 flex items-center gap-1">
+                        <AlertTriangle size={12} /> {m.rejection_notes}
+                      </p>
                     )}
                   </div>
-                  <p className="text-sm text-neutral-500">{formatDate(m.meeting_date)} - {m.attendees} attendees - By {m.prepared_by}</p>
-                  {m.rejection_notes && (
-                    <p className="text-xs text-error-600 mt-1 flex items-center gap-1">
-                      <AlertTriangle size={12} /> {m.rejection_notes}
-                    </p>
-                  )}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Badge status={statusBadge(m.status)}>{statusLabel(m.status)}</Badge>
+                    <button onClick={() => setViewingMinute(m)} className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors">
+                      <Eye size={15} />
+                    </button>
+                    {canEdit && (
+                      <>
+                        <button onClick={() => { setEditingId(m.id); setShowForm(true); }} className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors">
+                          <Edit size={15} />
+                        </button>
+                        <button onClick={() => setDeleteId(m.id)} className="p-1.5 rounded-lg text-neutral-400 hover:text-error-500 hover:bg-error-50 transition-colors">
+                          <Trash2 size={15} />
+                        </button>
+                        <Button size="sm" onClick={() => setSubmitId(m.id)}>
+                          <Send size={13} /> Submit
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Badge status={statusBadge(m.status)}>{statusLabel(m.status)}</Badge>
-                  <Button size="sm" variant="ghost" onClick={() => setViewingMinute(m)}><Eye size={14} /></Button>
-                  {(m.status === 'draft' || m.status === 'rejected_by_secretary' || m.status === 'rejected') && (
-                    <>
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(m)}><Edit size={14} /></Button>
-                      <Button size="sm" variant="ghost" onClick={() => setDeleteId(m.id)}><Trash2 size={14} className="text-error-500" /></Button>
-                      <Button size="sm" onClick={() => setSubmitId(m.id)}>
-                        <Send size={14} /> {role === 'secretary' ? 'Submit' : 'Submit'}
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
@@ -229,11 +348,8 @@ export function MinutesAuthoring({
           editingId={editingId}
           existingItems={items}
           onSubmit={(payload) => {
-            if (editingId) {
-              updateMut.mutate({ id: editingId, data: payload });
-            } else {
-              createMut.mutate(payload);
-            }
+            if (editingId) updateMut.mutate({ id: editingId, data: payload });
+            else createMut.mutate(payload);
           }}
           onClose={() => { setShowForm(false); setEditingId(null); }}
           isPending={createMut.isPending || updateMut.isPending}
@@ -268,9 +384,9 @@ export function MinutesAuthoring({
   );
 }
 
-// ============================================================
-// Minutes Form (authoring with attendance picker)
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  MINUTES FORM (authoring with attendance picker)
+// ═══════════════════════════════════════════════════════════════════════════════
 function MinutesForm({
   role, userName, editingId, existingItems, onSubmit, onClose, isPending,
 }: {
@@ -306,6 +422,29 @@ function MinutesForm({
       : minutesApi.getMembers(),
   });
 
+  const { data: secSig } = useQuery({
+    queryKey: queryKeys.signature('secretary'),
+    queryFn: async () => { try { return await minutesApi.getSignature('secretary'); } catch { return null; } },
+    initialData: null as any,
+  });
+
+  const { data: chairSig } = useQuery({
+    queryKey: queryKeys.signature('chairperson'),
+    queryFn: async () => { try { return await minutesApi.getSignature('chairperson'); } catch { return null; } },
+    initialData: null as any,
+  });
+
+  // Hydrate attendance from editing record
+  useEffect(() => {
+    if (editing?.attendees) {
+      const init: Record<string, AttendanceBucket | null> = {};
+      editing.attendees.forEach((a: any) => { init[a.id] = 'PRESENT'; });
+      editing.absent_with_apology?.forEach((a: any) => { init[a.id] = 'ABSENT_WITH_APOLOGY'; });
+      editing.absent_without_apology?.forEach((a: any) => { init[a.id] = 'ABSENT'; });
+      setAttendance(init);
+    }
+  }, [editingId]);
+
   const filteredMembers = useMemo(() => {
     const all = members || [];
     if (!memberSearch.trim()) return all;
@@ -321,11 +460,7 @@ function MinutesForm({
 
   const setMemberBucket = (memberId: string, bucket: AttendanceBucket | null) => {
     setAttendance((prev) => {
-      if (bucket === null) {
-        const next = { ...prev };
-        delete next[memberId];
-        return next;
-      }
+      if (bucket === null) { const next = { ...prev }; delete next[memberId]; return next; }
       return { ...prev, [memberId]: bucket };
     });
   };
@@ -333,11 +468,7 @@ function MinutesForm({
   const handleSubmit = () => {
     const attendanceArray: MinuteAttendance[] = Object.entries(attendance)
       .filter(([, status]) => status !== null)
-      .map(([memberId, status]) => ({
-        member_id: memberId,
-        status: status as AttendanceBucket,
-      }));
-
+      .map(([memberId, status]) => ({ member_id: memberId, status: status as AttendanceBucket }));
     onSubmit({
       title: form.title,
       meeting_date: form.meeting_date,
@@ -355,30 +486,14 @@ function MinutesForm({
 
   return (
     <Modal open onClose={onClose} title={editingId ? 'Edit Minutes' : 'Create Meeting Minutes'} size="xl">
-      <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+      <div className="space-y-5 max-h-[70vh] overflow-y-auto">
         {/* Meeting Details */}
         <div className="space-y-3">
-          <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wide">Meeting Details</h4>
-          <Input
-            label="Title"
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            placeholder="Monthly General Meeting"
-            required
-          />
+          <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Meeting Details</h4>
+          <Input label="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Monthly General Meeting" required />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input
-              label="Meeting Date"
-              type="date"
-              value={form.meeting_date}
-              onChange={(e) => setForm({ ...form, meeting_date: e.target.value })}
-              required
-            />
-            <Select
-              label="Meeting Type"
-              value={form.meeting_type}
-              onChange={(e) => { setForm({ ...form, meeting_type: e.target.value }); setAttendance({}); }}
-            >
+            <Input label="Meeting Date" type="date" value={form.meeting_date} onChange={(e) => setForm({ ...form, meeting_date: e.target.value })} required />
+            <Select label="Meeting Type" value={form.meeting_type} onChange={(e) => { setForm({ ...form, meeting_type: e.target.value }); setAttendance({}); }}>
               <option value="general">General</option>
               <option value="executive">Executive</option>
             </Select>
@@ -388,28 +503,22 @@ function MinutesForm({
         {/* Attendance */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wide">Attendance</h4>
-            <button
-              onClick={() => setShowMemberPicker(!showMemberPicker)}
-              className="text-xs text-primary-600 font-medium hover:text-primary-700"
-            >
+            <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Attendance</h4>
+            <button onClick={() => setShowMemberPicker(!showMemberPicker)} className="text-xs text-primary-600 font-medium hover:text-primary-700">
               {showMemberPicker ? 'Hide' : 'Show'} member picker
             </button>
           </div>
-
           <div className="grid grid-cols-3 gap-2">
-            <div className={classNames('rounded-lg p-2 text-center border', presentCount > 0 ? BUCKET_COLORS.PRESENT : 'bg-neutral-50 border-neutral-100')}>
-              <p className="text-lg font-bold">{presentCount}</p>
-              <p className="text-2xs font-medium">Present</p>
-            </div>
-            <div className={classNames('rounded-lg p-2 text-center border', absentApologyCount > 0 ? BUCKET_COLORS.ABSENT_WITH_APOLOGY : 'bg-neutral-50 border-neutral-100')}>
-              <p className="text-lg font-bold">{absentApologyCount}</p>
-              <p className="text-2xs font-medium">Absent w/ Apology</p>
-            </div>
-            <div className={classNames('rounded-lg p-2 text-center border', absentCount > 0 ? BUCKET_COLORS.ABSENT : 'bg-neutral-50 border-neutral-100')}>
-              <p className="text-lg font-bold">{absentCount}</p>
-              <p className="text-2xs font-medium">Absent</p>
-            </div>
+            {[
+              { label: 'Present', count: presentCount, bucket: 'PRESENT' as const },
+              { label: 'Absent w/ Apology', count: absentApologyCount, bucket: 'ABSENT_WITH_APOLOGY' as const },
+              { label: 'Absent', count: absentCount, bucket: 'ABSENT' as const },
+            ].map(s => (
+              <div key={s.bucket} className={classNames('rounded-xl p-3 text-center border transition-colors', s.count > 0 ? BUCKET_COLORS[s.bucket] : 'bg-neutral-50 border-neutral-100')}>
+                <p className="text-xl font-bold">{s.count}</p>
+                <p className="text-2xs font-medium mt-0.5">{s.label}</p>
+              </div>
+            ))}
           </div>
 
           {showMemberPicker && (
@@ -419,16 +528,16 @@ function MinutesForm({
               ) : (
                 <>
                   <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
                     <input
                       type="text"
                       placeholder="Search by name or phone..."
                       value={memberSearch}
                       onChange={(e) => setMemberSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-2 text-sm rounded-lg border border-neutral-200 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                      className="w-full pl-9 pr-3 py-2 text-sm rounded-n26-btn border border-neutral-200 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/15"
                     />
                   </div>
-                  <div className="max-h-48 overflow-y-auto space-y-1">
+                  <div className="max-h-52 overflow-y-auto space-y-0.5">
                     {filteredMembers.map((m: MinuteMember) => {
                       const bucket = attendance[m.id];
                       return (
@@ -443,10 +552,8 @@ function MinutesForm({
                                 key={b}
                                 onClick={() => setMemberBucket(m.id, bucket === b ? null : b)}
                                 className={classNames(
-                                  'px-2 py-0.5 rounded text-2xs font-medium transition-colors',
-                                  bucket === b
-                                    ? BUCKET_COLORS[b]
-                                    : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200',
+                                  'px-2.5 py-1 rounded-lg text-2xs font-medium transition-colors',
+                                  bucket === b ? BUCKET_COLORS[b] : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200',
                                 )}
                               >
                                 {b === 'PRESENT' ? 'P' : b === 'ABSENT_WITH_APOLOGY' ? 'A/A' : 'A'}
@@ -456,9 +563,7 @@ function MinutesForm({
                         </div>
                       );
                     })}
-                    {filteredMembers.length === 0 && (
-                      <p className="text-sm text-neutral-400 text-center py-4">No members found</p>
-                    )}
+                    {filteredMembers.length === 0 && <p className="text-sm text-neutral-400 text-center py-4">No members found</p>}
                   </div>
                   {form.meeting_type === 'executive' && (
                     <p className="text-xs text-secondary-600 bg-secondary-50 rounded-lg p-2">
@@ -473,12 +578,37 @@ function MinutesForm({
 
         {/* Minutes Content */}
         <div className="space-y-3">
-          <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wide">Minutes Content</h4>
+          <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Minutes Content</h4>
           <Textarea label="Agenda" rows={2} value={form.agenda} onChange={(e) => setForm({ ...form, agenda: e.target.value })} placeholder="Opening; reports; decisions..." />
           <Textarea label="Discussions" rows={4} value={form.discussions} onChange={(e) => setForm({ ...form, discussions: e.target.value })} placeholder="Discussion notes..." />
           <Textarea label="Decisions" rows={3} value={form.decisions} onChange={(e) => setForm({ ...form, decisions: e.target.value })} placeholder="Agreed actions and decisions..." />
           <Textarea label="Action Items" rows={2} value={form.action_items} onChange={(e) => setForm({ ...form, action_items: e.target.value })} placeholder="Owner and due date..." />
           <Input label="Next Meeting Date" type="date" value={form.next_meeting_date} onChange={(e) => setForm({ ...form, next_meeting_date: e.target.value })} />
+        </div>
+
+        {/* Signature Preview */}
+        <div className="space-y-3">
+          <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Officer Signatures</h4>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 rounded-xl border border-neutral-100">
+              <p className="text-xs text-neutral-400 mb-1">Secretary</p>
+              {secSig?.url ? (
+                <img src={secSig.url} alt="Secretary signature" className="max-h-12 object-contain" />
+              ) : (
+                <p className="text-xs text-neutral-300 italic">No signature on file</p>
+              )}
+              <p className="text-xs font-medium text-neutral-700 mt-1">{secSig?.name ?? '—'}</p>
+            </div>
+            <div className="p-3 rounded-xl border border-neutral-100">
+              <p className="text-xs text-neutral-400 mb-1">Chairperson</p>
+              {chairSig?.url ? (
+                <img src={chairSig.url} alt="Chairperson signature" className="max-h-12 object-contain" />
+              ) : (
+                <p className="text-xs text-neutral-300 italic">No signature on file</p>
+              )}
+              <p className="text-xs font-medium text-neutral-700 mt-1">{chairSig?.name ?? '—'}</p>
+            </div>
+          </div>
         </div>
 
         {/* Actions */}
@@ -493,78 +623,90 @@ function MinutesForm({
   );
 }
 
-// ============================================================
-// Minute View Modal
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  MINUTE VIEW MODAL
+// ═══════════════════════════════════════════════════════════════════════════════
 function MinuteViewModal({ minute, onClose }: { minute: any; onClose: () => void }) {
+  const handlePrint = () => window.print();
   return (
     <Modal open onClose={onClose} title={minute.title} size="lg">
       <div className="space-y-4 max-h-[70vh] overflow-y-auto">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs text-neutral-400">Meeting Date</p>
-            <p className="text-sm font-semibold text-neutral-800">{formatDate(minute.meeting_date)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-neutral-400">Type</p>
-            <p className="text-sm font-semibold text-neutral-800 capitalize">{minute.meeting_type || 'general'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-neutral-400">Prepared By</p>
-            <p className="text-sm font-semibold text-neutral-800">{minute.prepared_by}</p>
-          </div>
-          <div>
-            <p className="text-xs text-neutral-400">Status</p>
-            <Badge status={statusBadge(minute.status)}>{statusLabel(minute.status)}</Badge>
-          </div>
+          <div><p className="text-xs text-neutral-400">Meeting Date</p><p className="text-sm font-semibold text-neutral-800">{formatDate(minute.meeting_date)}</p></div>
+          <div><p className="text-xs text-neutral-400">Type</p><p className="text-sm font-semibold text-neutral-800 capitalize">{minute.meeting_type || 'general'}</p></div>
+          <div><p className="text-xs text-neutral-400">Prepared By</p><p className="text-sm font-semibold text-neutral-800">{minute.prepared_by}</p></div>
+          <div><p className="text-xs text-neutral-400">Status</p><Badge status={statusBadge(minute.status)}>{statusLabel(minute.status)}</Badge></div>
         </div>
 
-        {minute.agenda && (
-          <div>
-            <p className="text-xs font-bold text-neutral-500 uppercase mb-1">Agenda</p>
-            <p className="text-sm text-neutral-700 whitespace-pre-wrap">{minute.agenda}</p>
+        {minute.agenda && <div><p className="text-xs font-bold text-neutral-400 uppercase mb-1">Agenda</p><p className="text-sm text-neutral-700 whitespace-pre-wrap">{minute.agenda}</p></div>}
+        {minute.discussions && <div><p className="text-xs font-bold text-neutral-400 uppercase mb-1">Discussions</p><p className="text-sm text-neutral-700 whitespace-pre-wrap">{minute.discussions}</p></div>}
+        {minute.decisions && <div><p className="text-xs font-bold text-neutral-400 uppercase mb-1">Decisions</p><p className="text-sm text-neutral-700 whitespace-pre-wrap">{minute.decisions}</p></div>}
+        {minute.action_items && <div><p className="text-xs font-bold text-neutral-400 uppercase mb-1">Action Items</p><p className="text-sm text-neutral-700 whitespace-pre-wrap">{minute.action_items}</p></div>}
+
+        {(minute.attendees?.length > 0 || minute.absent_with_apology?.length > 0 || minute.absent_without_apology?.length > 0) && (
+          <div className="grid grid-cols-3 gap-3">
+            {minute.attendees?.length > 0 && (
+              <div className="p-3 rounded-xl bg-success-50 border border-success-200">
+                <p className="text-xs font-bold text-success-700 mb-1">Present ({minute.attendees.length})</p>
+                <div className="space-y-0.5">{minute.attendees.map((a: any) => <p key={a.id} className="text-xs text-success-700">{a.name}</p>)}</div>
+              </div>
+            )}
+            {minute.absent_with_apology?.length > 0 && (
+              <div className="p-3 rounded-xl bg-warning-50 border border-warning-200">
+                <p className="text-xs font-bold text-warning-700 mb-1">Absent w/ Apology ({minute.absent_with_apology.length})</p>
+                <div className="space-y-0.5">{minute.absent_with_apology.map((a: any) => <p key={a.id} className="text-xs text-warning-700">{a.name}</p>)}</div>
+              </div>
+            )}
+            {minute.absent_without_apology?.length > 0 && (
+              <div className="p-3 rounded-xl bg-error-50 border border-error-200">
+                <p className="text-xs font-bold text-error-700 mb-1">Absent ({minute.absent_without_apology.length})</p>
+                <div className="space-y-0.5">{minute.absent_without_apology.map((a: any) => <p key={a.id} className="text-xs text-error-700">{a.name}</p>)}</div>
+              </div>
+            )}
           </div>
         )}
-        {minute.discussions && (
-          <div>
-            <p className="text-xs font-bold text-neutral-500 uppercase mb-1">Discussions</p>
-            <p className="text-sm text-neutral-700 whitespace-pre-wrap">{minute.discussions}</p>
+
+        {/* Signature previews */}
+        {(minute.secretary_signature_url || minute.chairperson_signature_url) && (
+          <div className="grid grid-cols-2 gap-4 pt-3 border-t border-neutral-100">
+            <div>
+              <p className="text-xs text-neutral-400 mb-1">Secretary</p>
+              {minute.secretary_signature_url && <img src={minute.secretary_signature_url} alt="Secretary" className="max-h-14 object-contain" />}
+              <p className="text-xs font-medium text-neutral-700 mt-1">{minute.secretary_name ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-neutral-400 mb-1">Chairperson</p>
+              {minute.chairperson_signature_url && <img src={minute.chairperson_signature_url} alt="Chairperson" className="max-h-14 object-contain" />}
+              <p className="text-xs font-medium text-neutral-700 mt-1">{minute.chairperson_name ?? '—'}</p>
+            </div>
           </div>
         )}
-        {minute.decisions && (
-          <div>
-            <p className="text-xs font-bold text-neutral-500 uppercase mb-1">Decisions</p>
-            <p className="text-sm text-neutral-700 whitespace-pre-wrap">{minute.decisions}</p>
-          </div>
-        )}
-        {minute.action_items && (
-          <div>
-            <p className="text-xs font-bold text-neutral-500 uppercase mb-1">Action Items</p>
-            <p className="text-sm text-neutral-700 whitespace-pre-wrap">{minute.action_items}</p>
-          </div>
-        )}
+
         {minute.rejection_notes && (
-          <div className="p-3 rounded-lg bg-error-50 border border-error-200">
+          <div className="p-3 rounded-xl bg-error-50 border border-error-200">
             <p className="text-xs font-bold text-error-600 uppercase mb-1">Rejection Notes</p>
             <p className="text-sm text-error-700">{minute.rejection_notes}</p>
           </div>
         )}
+
+        <div className="flex justify-end gap-3 pt-2 border-t border-neutral-100">
+          <Button variant="secondary" onClick={handlePrint}><Printer size={15} /> Print</Button>
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+        </div>
       </div>
     </Modal>
   );
 }
 
-// ============================================================
-// Secretary Minutes Management
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SECRETARY MINUTES MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════════
 export function MinutesManagement() {
   return (
     <MinutesAuthoring
       role="secretary"
       title="Meeting Minutes"
       subtitle="Create and manage meeting minutes"
-      filter="mine"
-      submitLabel="Submit"
       queryKey={queryKeys.secretaryMinutes}
       fetchFn={() => mockSecretary.getMeetingMinutes()}
       createFn={(data) => mockSecretary.createMinutes(data as any)}
@@ -575,17 +717,15 @@ export function MinutesManagement() {
   );
 }
 
-// ============================================================
-// Vice Secretary Minutes
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  VICE SECRETARY MINUTES
+// ═══════════════════════════════════════════════════════════════════════════════
 export function ViceSecretaryMinutes() {
   return (
     <MinutesAuthoring
       role="vice-secretary"
       title="Meeting Minutes"
       subtitle="Create and submit minutes to the Secretary"
-      filter="mine"
-      submitLabel="Submit to Secretary"
       queryKey={queryKeys.viceSecretaryMinutes}
       fetchFn={() => mockViceSecretary.getMeetingMinutes()}
       createFn={(data) => mockViceSecretary.createMinutes(data as any)}
@@ -596,9 +736,9 @@ export function ViceSecretaryMinutes() {
   );
 }
 
-// ============================================================
-// Secretary Minutes Review
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SECRETARY MINUTES REVIEW
+// ═══════════════════════════════════════════════════════════════════════════════
 export function MinutesReview() {
   const qc = useQueryClient();
   const [viewingMinute, setViewingMinute] = useState<any | null>(null);
@@ -617,9 +757,7 @@ export function MinutesReview() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.secretaryMinutesReview });
       qc.invalidateQueries({ queryKey: queryKeys.chairpersonApprovals });
-      setReviewAction(null);
-      setReviewNotes('');
-      setViewingMinute(null);
+      setReviewAction(null); setReviewNotes(''); setViewingMinute(null);
     },
   });
 
@@ -629,33 +767,39 @@ export function MinutesReview() {
   const items = data || [];
 
   return (
-    <div>
-      <PageHeader title="Minutes Review" subtitle="Review Vice Secretary submissions and forward to Chairperson" icon={<FileSearch size={20} />} />
-      <Card className="p-4">
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Minutes Review</h1>
+        <p className="mt-1 text-sm text-neutral-500">Review Vice Secretary submissions and forward to Chairperson</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <KpiCard label="Pending Review" value={items.length} icon={FileSearch} accent="bg-warning-50 text-warning-600" />
+        <KpiCard label="Forwarded Today" value="0" icon={CheckCircle} accent="bg-success-50 text-success-600" />
+      </div>
+
+      <Card className="p-6">
+        <SectionHeader title="Review Queue" />
         {items.length === 0 ? (
           <EmptyState icon={<FileSearch size={24} />} title="No pending reviews" message="Submitted minutes will appear here for your review." />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-1">
             {items.map((m: any) => (
-              <div key={m.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-neutral-100">
+              <div key={m.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 -mx-3 rounded-xl hover:bg-neutral-50 transition-colors">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <p className="font-semibold text-neutral-800">{m.title}</p>
+                    <p className="text-sm font-semibold text-neutral-800">{m.title}</p>
                     {m.meeting_type === 'executive' && (
                       <span className="text-2xs font-bold uppercase text-secondary-600 bg-secondary-50 px-1.5 py-0.5 rounded">Executive</span>
                     )}
                   </div>
-                  <p className="text-sm text-neutral-500">{formatDate(m.meeting_date)} - {m.attendees} attendees - By {m.prepared_by}</p>
+                  <p className="text-xs text-neutral-400">{formatDate(m.meeting_date)} · {m.attendees} attendees · By {m.prepared_by}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <Button size="sm" variant="ghost" onClick={() => setViewingMinute(m)}><Eye size={14} /> View</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditMinute(m)}><Edit size={14} /> Edit</Button>
-                  <Button size="sm" onClick={() => setReviewAction({ id: m.id, decision: 'approve' })}>
-                    <CheckCircle size={14} /> Forward
-                  </Button>
-                  <Button size="sm" variant="danger" onClick={() => setReviewAction({ id: m.id, decision: 'reject' })}>
-                    <XCircle size={14} /> Return
-                  </Button>
+                  <button onClick={() => setViewingMinute(m)} className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"><Eye size={15} /></button>
+                  <button onClick={() => setEditMinute(m)} className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"><Edit size={15} /></button>
+                  <Button size="sm" onClick={() => setReviewAction({ id: m.id, decision: 'approve' })}><CheckCircle size={13} /> Forward</Button>
+                  <Button size="sm" variant="danger" onClick={() => setReviewAction({ id: m.id, decision: 'reject' })}><XCircle size={13} /> Return</Button>
                 </div>
               </div>
             ))}
@@ -663,27 +807,15 @@ export function MinutesReview() {
         )}
       </Card>
 
-      {viewingMinute && !editMinute && (
-        <MinuteViewModal minute={viewingMinute} onClose={() => setViewingMinute(null)} />
-      )}
-
+      {viewingMinute && !editMinute && <MinuteViewModal minute={viewingMinute} onClose={() => setViewingMinute(null)} />}
       {editMinute && (
         <MinutesForm
-          role="secretary"
-          userName=""
-          editingId={editMinute.id}
-          existingItems={items}
-          onSubmit={(payload) => {
-            mockSecretary.updateMinutes(editMinute.id, payload as any);
-            setEditMinute(null);
-            qc.invalidateQueries({ queryKey: queryKeys.secretaryMinutesReview });
-          }}
-          onClose={() => setEditMinute(null)}
-          isPending={false}
+          role="secretary" userName="" editingId={editMinute.id} existingItems={items}
+          onSubmit={(payload) => { mockSecretary.updateMinutes(editMinute.id, payload as any); setEditMinute(null); qc.invalidateQueries({ queryKey: queryKeys.secretaryMinutesReview }); }}
+          onClose={() => setEditMinute(null)} isPending={false}
         />
       )}
 
-      {/* Review Dialog */}
       <Modal
         open={!!reviewAction}
         onClose={() => { setReviewAction(null); setReviewNotes(''); }}
@@ -692,34 +824,17 @@ export function MinutesReview() {
       >
         <div className="space-y-4">
           {reviewAction?.decision === 'reject' && (
-            <Textarea
-              label="Notes for the author (required)"
-              rows={4}
-              value={reviewNotes}
-              onChange={(e) => setReviewNotes(e.target.value)}
-              placeholder="Explain what needs to be corrected..."
-              required
-            />
+            <Textarea label="Notes for the author (required)" rows={4} value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} placeholder="Explain what needs to be corrected..." required />
           )}
           {reviewAction?.decision === 'approve' && (
-            <Textarea
-              label="Notes (optional)"
-              rows={2}
-              value={reviewNotes}
-              onChange={(e) => setReviewNotes(e.target.value)}
-              placeholder="Any notes for the Chairperson..."
-            />
+            <Textarea label="Notes (optional)" rows={2} value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} placeholder="Any notes for the Chairperson..." />
           )}
           <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={() => { setReviewAction(null); setReviewNotes(''); }}>Cancel</Button>
             <Button
               variant={reviewAction?.decision === 'reject' ? 'danger' : 'primary'}
               disabled={reviewAction?.decision === 'reject' && !reviewNotes.trim()}
-              onClick={() => reviewAction && reviewMut.mutate({
-                id: reviewAction.id,
-                decision: reviewAction.decision,
-                notes: reviewNotes.trim() || undefined,
-              })}
+              onClick={() => reviewAction && reviewMut.mutate({ id: reviewAction.id, decision: reviewAction.decision, notes: reviewNotes.trim() || undefined })}
             >
               {reviewAction?.decision === 'approve' ? 'Forward to Chairperson' : 'Return to Author'}
             </Button>
@@ -730,18 +845,15 @@ export function MinutesReview() {
   );
 }
 
-// ============================================================
-// Meeting Scheduling (Secretary)
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  MEETING SCHEDULING (Secretary)
+// ═══════════════════════════════════════════════════════════════════════════════
 export function MeetingScheduling() {
   const qc = useQueryClient();
   const [createModal, setCreateModal] = useState(false);
   const [form, setForm] = useState({ title: '', date: '', time: '', location: '', type: '' });
 
-  const { data, isLoading } = useQuery({
-    queryKey: queryKeys.secretarySchedule,
-    queryFn: () => mockSecretary.getSchedule(),
-  });
+  const { data, isLoading } = useQuery({ queryKey: queryKeys.secretarySchedule, queryFn: () => mockSecretary.getSchedule() });
   const createMutation = useMutation({
     mutationFn: (data: any) => mockSecretary.createMeeting(data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.secretarySchedule }); setCreateModal(false); setForm({ title: '', date: '', time: '', location: '', type: '' }); },
@@ -749,26 +861,38 @@ export function MeetingScheduling() {
 
   if (isLoading) return <LoadingState />;
 
+  const meetings = data || [];
+
   return (
-    <div>
-      <PageHeader title="Meeting Scheduling" subtitle="Plan and schedule meetings" icon={<CalendarDays size={20} />}
-        action={<Button onClick={() => setCreateModal(true)}><Plus size={16} /> Schedule Meeting</Button>} />
-      <Card className="p-4">
-        {(data || []).length === 0 ? <EmptyState icon={<CalendarDays size={24} />} title="No meetings scheduled" /> : (
-          <div className="space-y-3">
-            {data!.map((m: any) => (
-              <div key={m.id} className="p-4 rounded-xl border border-neutral-100">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-neutral-800">{m.title}</p>
-                    <p className="text-sm text-neutral-500">{formatDate(m.date)} at {m.time} - {m.location}</p>
-                    <p className="text-xs text-neutral-400 mt-1">Type: {m.type} - {m.attendees_count} attendees</p>
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Meeting Scheduling</h1>
+          <p className="mt-1 text-sm text-neutral-500">Plan and schedule meetings</p>
+        </div>
+        <Button onClick={() => setCreateModal(true)}><Plus size={16} /> Schedule Meeting</Button>
+      </div>
+
+      <Card className="p-6">
+        <SectionHeader title="Upcoming Meetings" />
+        {meetings.length === 0 ? (
+          <EmptyState icon={<CalendarDays size={24} />} title="No meetings scheduled" />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {meetings.map((m: any) => (
+              <div key={m.id} className="p-4 rounded-xl border border-neutral-100 hover:border-neutral-200 hover:shadow-float transition-all">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center flex-shrink-0">
+                    <CalendarDays size={18} className="text-primary-600" />
                   </div>
                   <Badge status={m.status}>{m.status}</Badge>
                 </div>
+                <p className="text-sm font-bold text-neutral-800">{m.title}</p>
+                <p className="text-xs text-neutral-400 mt-1">{formatDate(m.date)} at {m.time} · {m.location}</p>
+                <p className="text-xs text-neutral-400">Type: {m.type} · {m.attendees_count} attendees</p>
                 {m.agenda?.length > 0 && (
-                  <ul className="mt-3 text-sm text-neutral-600 space-y-1">
-                    {m.agenda.map((a: string, i: number) => <li key={i} className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-neutral-400" />{a}</li>)}
+                  <ul className="mt-3 text-xs text-neutral-500 space-y-1">
+                    {m.agenda.map((a: string, i: number) => <li key={i} className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-neutral-300" />{a}</li>)}
                   </ul>
                 )}
               </div>
@@ -776,6 +900,7 @@ export function MeetingScheduling() {
           </div>
         )}
       </Card>
+
       <Modal open={createModal} onClose={() => setCreateModal(false)} title="Schedule Meeting">
         <div className="space-y-4">
           <Input label="Title" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
@@ -792,9 +917,9 @@ export function MeetingScheduling() {
   );
 }
 
-// ============================================================
-// Secretary Events
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SECRETARY EVENTS
+// ═══════════════════════════════════════════════════════════════════════════════
 export function SecretaryEvents() {
   const qc = useQueryClient();
   const [createModal, setCreateModal] = useState(false);
@@ -810,17 +935,24 @@ export function SecretaryEvents() {
   const events = data || [];
 
   return (
-    <div>
-      <PageHeader title="Events" subtitle="Create and manage KHWWC events" icon={<Calendar size={20} />}
-        action={<Button onClick={() => setCreateModal(true)}><Plus size={16} /> New Event</Button>} />
-      <Card className="p-4">
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Events</h1>
+          <p className="mt-1 text-sm text-neutral-500">Create and manage KHWWC events</p>
+        </div>
+        <Button onClick={() => setCreateModal(true)}><Plus size={16} /> New Event</Button>
+      </div>
+
+      <Card className="p-6">
+        <SectionHeader title="All Events" />
         {events.length === 0 ? <EmptyState icon={<Calendar size={24} />} title="No events found" /> : (
-          <div className="space-y-3">
+          <div className="space-y-1">
             {events.map((e: any) => (
-              <div key={e.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-neutral-100">
+              <div key={e.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 -mx-3 rounded-xl hover:bg-neutral-50 transition-colors">
                 <div className="min-w-0">
-                  <p className="font-semibold text-neutral-800">{e.title}</p>
-                  <p className="text-sm text-neutral-500">{formatDate(e.date)} - {e.location} - {e.attendees_count} attendees</p>
+                  <p className="text-sm font-semibold text-neutral-800">{e.title}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">{formatDate(e.date)} · {e.location} · {e.attendees_count} attendees</p>
                 </div>
                 <Badge status={e.status}>{e.status}</Badge>
               </div>
@@ -828,6 +960,7 @@ export function SecretaryEvents() {
           </div>
         )}
       </Card>
+
       <Modal open={createModal} onClose={() => setCreateModal(false)} title="Create Event">
         <div className="space-y-4">
           <Input label="Title" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
@@ -842,9 +975,9 @@ export function SecretaryEvents() {
   );
 }
 
-// ============================================================
-// Signature Upload (shared)
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SIGNATURE UPLOAD (shared)
+// ═══════════════════════════════════════════════════════════════════════════════
 export function SignatureUpload({ role, title }: { role: string; title: string }) {
   const qc = useQueryClient();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -852,19 +985,13 @@ export function SignatureUpload({ role, title }: { role: string; title: string }
 
   const { data: signature, isLoading } = useQuery({
     queryKey: queryKeys.signature(role),
-    queryFn: async () => {
-      try { return await minutesApi.getSignature(role as 'secretary' | 'chairperson'); } catch { return null; }
-    },
+    queryFn: async () => { try { return await minutesApi.getSignature(role as 'secretary' | 'chairperson'); } catch { return null; } },
     initialData: null as any,
   });
 
   const uploadMut = useMutation({
     mutationFn: (file: File) => minutesApi.uploadSignature(role, file),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.signature(role) });
-      setSelectedFile(null);
-      setPreviewUrl(null);
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.signature(role) }); setSelectedFile(null); setPreviewUrl(null); },
   });
 
   useEffect(() => {
@@ -879,25 +1006,34 @@ export function SignatureUpload({ role, title }: { role: string; title: string }
   if (isLoading) return <LoadingState />;
 
   return (
-    <div>
-      <PageHeader title={title} subtitle="Upload your official signature for document signing" icon={<PenTool size={20} />} />
-      <Card className="p-6">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-48 h-24 border-2 border-dashed border-neutral-200 rounded-xl flex items-center justify-center bg-neutral-50">
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-xl font-bold text-neutral-900 tracking-tight">{title}</h1>
+        <p className="mt-1 text-sm text-neutral-500">Upload your official signature for document signing</p>
+      </div>
+
+      <Card className="p-8">
+        <div className="flex flex-col items-center gap-5">
+          <div className="w-64 h-32 border-2 border-dashed border-neutral-200 rounded-n26-card flex items-center justify-center bg-neutral-50 overflow-hidden">
             {previewUrl ? (
               <img src={previewUrl} alt="Signature preview" className="max-w-full max-h-full object-contain" />
             ) : signature?.url ? (
               <img src={signature.url} alt="Signature" className="max-w-full max-h-full object-contain" />
             ) : (
-              <PenTool size={32} className="text-neutral-300" />
+              <div className="flex flex-col items-center gap-2 text-neutral-300">
+                <PenTool size={36} />
+                <p className="text-xs">No signature yet</p>
+              </div>
             )}
           </div>
-          <p className="text-sm text-neutral-500 text-center">
-            {signature ? 'Your signature is on file. Upload a new image to replace it.' : 'No signature uploaded yet. Upload a PNG or JPG image of your signature.'}
-          </p>
-          {signature?.uploaded_at && (
-            <p className="text-xs text-neutral-400">Uploaded {formatDate(signature.uploaded_at)}</p>
-          )}
+
+          <div className="text-center">
+            <p className="text-sm text-neutral-600">
+              {signature ? 'Your signature is on file. Upload a new image to replace it.' : 'No signature uploaded yet. Upload a PNG or JPG of your signature.'}
+            </p>
+            {signature?.uploaded_at && <p className="text-xs text-neutral-400 mt-1">Uploaded {formatDate(signature.uploaded_at)}</p>}
+          </div>
+
           <div className="w-full max-w-sm space-y-3">
             <div>
               <label className="label">Choose signature image</label>
@@ -905,14 +1041,10 @@ export function SignatureUpload({ role, title }: { role: string; title: string }
                 type="file"
                 accept="image/png,image/jpeg"
                 onChange={e => setSelectedFile(e.target.files?.[0] || null)}
-                className="w-full text-sm text-neutral-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
+                className="w-full text-sm text-neutral-600 file:mr-3 file:py-2 file:px-4 file:rounded-n26-btn file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 transition-colors"
               />
             </div>
-            <Button
-              className="w-full"
-              onClick={() => selectedFile && uploadMut.mutate(selectedFile)}
-              disabled={!selectedFile || uploadMut.isPending}
-            >
+            <Button className="w-full" onClick={() => selectedFile && uploadMut.mutate(selectedFile)} disabled={!selectedFile || uploadMut.isPending}>
               <Upload size={16} /> {uploadMut.isPending ? 'Uploading...' : 'Upload Signature'}
             </Button>
             {uploadMut.isError && <p className="text-sm text-error-600 text-center">Failed to upload. Try again.</p>}
@@ -926,9 +1058,9 @@ export function SignatureUpload({ role, title }: { role: string; title: string }
 export function SecretarySignatureUpload() { return <SignatureUpload role="secretary" title="Secretary Signature" />; }
 export function ChairpersonSignatureUpload() { return <SignatureUpload role="chairperson" title="Chairperson Signature" />; }
 
-// ============================================================
-// Withdrawal Approvals (shared by Secretary and Chairperson)
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  WITHDRAWAL APPROVALS (shared by Secretary and Chairperson)
+// ═══════════════════════════════════════════════════════════════════════════════
 export function SecretaryWithdrawalApprovals() {
   return <RoleWithdrawalApprovals title="Withdrawal Approvals" subtitle="Review and approve withdrawal requests as Secretary signatory" queryKey={queryKeys.secretaryWithdrawals} fetchFn={() => mockSecretary.getWithdrawalApprovals()} approveFn={(id, action) => mockSecretary.approveWithdrawal(id, action)} />;
 }
@@ -957,24 +1089,29 @@ function RoleWithdrawalApprovals({ title, subtitle, queryKey, fetchFn, approveFn
   const processed = (data || []).filter((w: any) => w.status !== 'pending');
 
   return (
-    <div>
-      <PageHeader title={title} subtitle={subtitle} icon={<FileCheck size={20} />} />
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <Card className="p-4"><p className="text-xs text-neutral-400">Pending</p><p className="text-xl font-bold text-warning-600">{pending.length}</p></Card>
-        <Card className="p-4"><p className="text-xs text-neutral-400">Processed</p><p className="text-xl font-bold text-success-600">{processed.length}</p></Card>
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-xl font-bold text-neutral-900 tracking-tight">{title}</h1>
+        <p className="mt-1 text-sm text-neutral-500">{subtitle}</p>
       </div>
-      <Card className="p-4">
-        <h3 className="text-sm font-bold mb-3">Pending Requests</h3>
+
+      <div className="grid grid-cols-2 gap-4">
+        <KpiCard label="Pending" value={pending.length} icon={Clock} accent="bg-warning-50 text-warning-600" />
+        <KpiCard label="Processed" value={processed.length} icon={CheckCircle} accent="bg-success-50 text-success-600" />
+      </div>
+
+      <Card className="p-6">
+        <SectionHeader title="Pending Requests" />
         {pending.length === 0 ? <EmptyState icon={<FileCheck size={24} />} title="No pending requests" /> : (
-          <div className="space-y-3">
+          <div className="space-y-1">
             {pending.map((w: any) => (
-              <div key={w.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-neutral-100">
-                <div>
-                  <p className="font-semibold text-neutral-800">{w.member_name}</p>
-                  <p className="text-sm text-neutral-500">{formatCurrency(w.amount)} - {w.reason}</p>
-                  <p className="text-xs text-neutral-400 mt-1">Requested {formatDate(w.requested_date)}</p>
+              <div key={w.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 -mx-3 rounded-xl hover:bg-neutral-50 transition-colors">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-neutral-800">{w.member_name}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">{formatCurrency(w.amount)} · {w.reason}</p>
+                  <p className="text-xs text-neutral-300 mt-0.5">Requested {formatDate(w.requested_date)}</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-shrink-0">
                   <Button size="sm" onClick={() => { setSelected(w); setConfirmAction({ id: w.id, action: 'approve' }); }}><CheckCircle size={14} /> Approve</Button>
                   <Button size="sm" variant="danger" onClick={() => { setSelected(w); setConfirmAction({ id: w.id, action: 'reject' }); }}><XCircle size={14} /> Reject</Button>
                 </div>
@@ -983,12 +1120,13 @@ function RoleWithdrawalApprovals({ title, subtitle, queryKey, fetchFn, approveFn
           </div>
         )}
       </Card>
+
       {processed.length > 0 && (
-        <Card className="p-4 mt-4">
-          <h3 className="text-sm font-bold mb-3">Processed</h3>
-          <div className="space-y-2">
+        <Card className="p-6">
+          <SectionHeader title="Processed" />
+          <div className="space-y-1">
             {processed.map((w: any) => (
-              <div key={w.id} className="flex items-center justify-between py-2 border-b border-neutral-50 last:border-0">
+              <div key={w.id} className="flex items-center justify-between p-2.5 -mx-2.5 rounded-xl hover:bg-neutral-50 transition-colors">
                 <div>
                   <span className="text-sm font-medium text-neutral-700">{w.member_name}</span>
                   <span className="text-sm text-neutral-400 ml-2">{formatCurrency(w.amount)}</span>
@@ -999,6 +1137,7 @@ function RoleWithdrawalApprovals({ title, subtitle, queryKey, fetchFn, approveFn
           </div>
         </Card>
       )}
+
       <ConfirmDialog
         open={!!confirmAction}
         onClose={() => setConfirmAction(null)}
@@ -1012,39 +1151,65 @@ function RoleWithdrawalApprovals({ title, subtitle, queryKey, fetchFn, approveFn
   );
 }
 
-// ============================================================
-// Vice Secretary Dashboard
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  VICE SECRETARY DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════════
 export function ViceSecretaryDashboard() {
+  const { user } = useAuth();
   const { data, isLoading } = useQuery({ queryKey: queryKeys.viceSecretaryDashboard, queryFn: () => mockViceSecretary.dashboard() });
   if (isLoading) return <LoadingState />;
   const d = data!;
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  })();
+
   return (
-    <div>
-      <PageHeader title="Vice Secretary Dashboard" subtitle="Events, documents, and organizational overview" icon={<LayoutDashboard size={20} />} />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Total Events" value={d.total_events} icon={<Calendar size={18} />} />
-        <StatCard label="Active Events" value={d.active_events} icon={<CalendarDays size={18} />} color="success" />
-        <StatCard label="Pending Docs" value={d.pending_documents} icon={<FileText size={18} />} color="warning" />
-        <StatCard label="Active Members" value={d.active_members} icon={<Users size={18} />} color="secondary" />
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900 tracking-tight">{greeting}, {user?.name?.split(' ')[0] ?? 'Vice Secretary'}</h1>
+          <p className="mt-1 text-sm text-neutral-500">Events, documents, and organizational overview</p>
+        </div>
+        <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2">
+          <div className="w-9 h-9 rounded-full bg-secondary-500 text-white text-sm font-bold flex items-center justify-center">
+            {initials(user?.name ?? 'VS')}
+          </div>
+          <div className="hidden sm:block">
+            <p className="text-sm font-semibold text-neutral-800">{user?.name ?? 'Vice Secretary'}</p>
+            <p className="text-xs text-neutral-400">Vice Secretary</p>
+          </div>
+        </div>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-        <Card className="p-5">
-          <h3 className="text-sm font-bold mb-3">Recent Documents</h3>
-          <div className="space-y-2">
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard label="Total Events" value={d.total_events} icon={Calendar} accent="bg-primary-50 text-primary-600" />
+        <KpiCard label="Active Events" value={d.active_events} icon={CalendarDays} accent="bg-success-50 text-success-600" />
+        <KpiCard label="Pending Docs" value={d.pending_documents} icon={FileText} accent="bg-warning-50 text-warning-600" />
+        <KpiCard label="Active Members" value={d.active_members} icon={Users} accent="bg-secondary-50 text-secondary-600" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="p-6">
+          <SectionHeader title="Recent Documents" />
+          <div className="space-y-1">
             {d.recent_documents.map((doc: any, i: number) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-neutral-50 last:border-0">
-                <div><p className="text-sm font-medium text-neutral-700">{doc.title}</p><p className="text-xs text-neutral-400">{doc.type}</p></div>
+              <div key={i} className="flex items-center justify-between p-2.5 -mx-2.5 rounded-xl hover:bg-neutral-50 transition-colors">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-neutral-800 truncate">{doc.title}</p>
+                  <p className="text-xs text-neutral-400">{doc.type}</p>
+                </div>
                 <Badge status={doc.status}>{doc.status}</Badge>
               </div>
             ))}
           </div>
         </Card>
-        <Card className="p-5">
-          <h3 className="text-sm font-bold mb-3">Event Summary</h3>
-          <div className="space-y-2">
+        <Card className="p-6">
+          <SectionHeader title="Event Summary" />
+          <div className="space-y-1">
             {d.event_summary.map((e: any, i: number) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-neutral-50 last:border-0">
+              <div key={i} className="flex items-center justify-between p-2.5 -mx-2.5 rounded-xl hover:bg-neutral-50 transition-colors">
                 <span className="text-sm text-neutral-700">{e.type}</span>
                 <Badge>{e.count}</Badge>
               </div>
@@ -1052,13 +1217,14 @@ export function ViceSecretaryDashboard() {
           </div>
         </Card>
       </div>
-      <Card className="p-5 mt-4">
-        <h3 className="text-sm font-bold mb-3">Recent Activity</h3>
-        <div className="space-y-2">
+
+      <Card className="p-6">
+        <SectionHeader title="Recent Activity" />
+        <div className="space-y-1">
           {d.recent_activity.map((a: any, i: number) => (
-            <div key={i} className="flex items-center justify-between py-2 border-b border-neutral-50 last:border-0">
+            <div key={i} className="flex items-center justify-between p-2.5 -mx-2.5 rounded-xl hover:bg-neutral-50 transition-colors">
               <p className="text-sm text-neutral-700">{a.description}</p>
-              <span className="text-xs text-neutral-400">{relativeTime(a.date)}</span>
+              <span className="text-xs text-neutral-400 whitespace-nowrap">{relativeTime(a.date)}</span>
             </div>
           ))}
         </div>
@@ -1067,42 +1233,105 @@ export function ViceSecretaryDashboard() {
   );
 }
 
-// ============================================================
-// Chairperson Dashboard
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  CHAIRPERSON DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════════
 export function ChairpersonDashboard() {
+  const { user } = useAuth();
   const { data, isLoading } = useQuery({ queryKey: queryKeys.chairpersonDashboard, queryFn: () => mockChairperson.dashboard() });
   if (isLoading) return <LoadingState />;
   const d = data!;
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  })();
+
+  const total = d.approved_count + d.rejected_count + d.pending_approvals;
+
+  const quickActions = [
+    { label: 'Approve Minutes', icon: CheckCircle, to: '/chairperson/approve-minutes', accent: 'bg-success-50 text-success-600' },
+    { label: 'Upload Signature', icon: PenTool, to: '/chairperson/signature', accent: 'bg-accent-50 text-accent-600' },
+    { label: 'Withdrawal Approvals', icon: FileCheck, to: '/chairperson/withdrawal-approvals', accent: 'bg-primary-50 text-primary-600' },
+  ];
+
   return (
-    <div>
-      <PageHeader title="Chairperson Dashboard" subtitle="Oversight and approval authority" icon={<LayoutDashboard size={20} />} />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Pending Approvals" value={d.pending_approvals} icon={<Clock size={18} />} color="warning" />
-        <StatCard label="Approved" value={d.approved_count} icon={<CheckCircle size={18} />} color="success" />
-        <StatCard label="Rejected" value={d.rejected_count} icon={<XCircle size={18} />} color="error" />
-        <StatCard label="Total" value={d.approved_count + d.rejected_count + d.pending_approvals} icon={<FileText size={18} />} />
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900 tracking-tight">{greeting}, {user?.name?.split(' ')[0] ?? 'Chairperson'}</h1>
+          <p className="mt-1 text-sm text-neutral-500">Oversight and approval authority</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="relative p-2.5 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 transition-colors">
+            <Bell size={18} className="text-neutral-500" />
+            {d.pending_approvals > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-error-500 rounded-full ring-2 ring-white" />}
+          </button>
+          <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2">
+            <div className="w-9 h-9 rounded-full bg-secondary-600 text-white text-sm font-bold flex items-center justify-center">
+              {initials(user?.name ?? 'CP')}
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-sm font-semibold text-neutral-800">{user?.name ?? 'Chairperson'}</p>
+              <p className="text-xs text-neutral-400">Chairperson</p>
+            </div>
+          </div>
+        </div>
       </div>
-      {d.pending_items.length > 0 && (
-        <Card className="p-5 mt-4">
-          <h3 className="text-sm font-bold mb-3">Pending Approvals</h3>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard label="Pending Approvals" value={d.pending_approvals} icon={Clock} accent="bg-warning-50 text-warning-600" delta="Action" positive={false} />
+        <KpiCard label="Approved" value={d.approved_count} icon={CheckCircle} accent="bg-success-50 text-success-600" delta="+3" positive />
+        <KpiCard label="Rejected" value={d.rejected_count} icon={XCircle} accent="bg-error-50 text-error-500" />
+        <KpiCard label="Total" value={total} icon={FileText} accent="bg-primary-50 text-primary-600" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card className="p-6">
+          <SectionHeader title="Quick Actions" />
           <div className="space-y-2">
-            {d.pending_items.map((m: any) => (
-              <div key={m.id} className="flex items-center justify-between py-2 border-b border-neutral-50 last:border-0">
-                <div><p className="text-sm font-medium text-neutral-700">{m.title}</p><p className="text-xs text-neutral-400">{formatDate(m.meeting_date)}</p></div>
-                <Badge status="pending">Pending</Badge>
-              </div>
+            {quickActions.map(a => (
+              <Link key={a.label} to={a.to} className="group flex items-center gap-3 p-3 rounded-xl border border-neutral-100 hover:border-neutral-200 hover:shadow-float transition-all">
+                <div className={classNames('w-9 h-9 rounded-lg flex items-center justify-center', a.accent)}>
+                  <a.icon size={17} />
+                </div>
+                <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900 flex-1">{a.label}</span>
+                <ArrowRight size={14} className="text-neutral-300 group-hover:text-neutral-500" />
+              </Link>
             ))}
           </div>
         </Card>
-      )}
+
+        <Card className="p-6 lg:col-span-2">
+          <SectionHeader title="Pending Approvals" action={
+            <Link to="/chairperson/approve-minutes" className="text-xs font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1">
+              View all <ArrowRight size={12} />
+            </Link>
+          } />
+          {d.pending_items.length === 0 ? (
+            <EmptyState icon={<CheckCircle size={24} />} title="No pending approvals" message="All minutes have been reviewed." />
+          ) : (
+            <div className="space-y-1">
+              {d.pending_items.map((m: any) => (
+                <div key={m.id} className="flex items-center justify-between p-2.5 -mx-2.5 rounded-xl hover:bg-neutral-50 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-neutral-800 truncate">{m.title}</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">{formatDate(m.meeting_date)}</p>
+                  </div>
+                  <Badge status="pending">Pending</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
 
-// ============================================================
-// Chairperson Approve Minutes
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  CHAIRPERSON APPROVE MINUTES
+// ═══════════════════════════════════════════════════════════════════════════════
 export function ApproveMinutes() {
   const qc = useQueryClient();
   const [viewingMinute, setViewingMinute] = useState<any | null>(null);
@@ -1111,9 +1340,7 @@ export function ApproveMinutes() {
 
   const { data: signature } = useQuery({
     queryKey: queryKeys.signature('chairperson'),
-    queryFn: async () => {
-      try { return await minutesApi.getSignature('chairperson'); } catch { return null; }
-    },
+    queryFn: async () => { try { return await minutesApi.getSignature('chairperson'); } catch { return null; } },
     initialData: null as any,
   });
 
@@ -1124,24 +1351,12 @@ export function ApproveMinutes() {
 
   const approveMut = useMutation({
     mutationFn: (id: string) => mockChairperson.approveMinutes(id, 'approve'),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.chairpersonApprovals });
-      qc.invalidateQueries({ queryKey: queryKeys.chairpersonDashboard });
-      setAction(null);
-      setViewingMinute(null);
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.chairpersonApprovals }); qc.invalidateQueries({ queryKey: queryKeys.chairpersonDashboard }); setAction(null); setViewingMinute(null); },
   });
 
   const rejectMut = useMutation({
-    mutationFn: ({ id, notes }: { id: string; notes: string }) =>
-      mockChairperson.approveMinutes(id, 'reject'),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.chairpersonApprovals });
-      qc.invalidateQueries({ queryKey: queryKeys.chairpersonDashboard });
-      setAction(null);
-      setRejectNotes('');
-      setViewingMinute(null);
-    },
+    mutationFn: ({ id, notes }: { id: string; notes: string }) => mockChairperson.approveMinutes(id, 'reject'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.chairpersonApprovals }); qc.invalidateQueries({ queryKey: queryKeys.chairpersonDashboard }); setAction(null); setRejectNotes(''); setViewingMinute(null); },
   });
 
   if (isLoading) return <LoadingState />;
@@ -1150,43 +1365,53 @@ export function ApproveMinutes() {
   const items = data || [];
 
   return (
-    <div>
-      <PageHeader title="Approve Minutes" subtitle="Review and approve meeting minutes forwarded by the Secretary" icon={<CheckCircle size={20} />} />
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Approve Minutes</h1>
+        <p className="mt-1 text-sm text-neutral-500">Review and approve meeting minutes forwarded by the Secretary</p>
+      </div>
 
       {!signature && (
-        <div className="mb-4 p-3 rounded-xl bg-warning-50 border border-warning-200 flex items-center gap-2">
-          <AlertTriangle size={18} className="text-warning-600 flex-shrink-0" />
-          <p className="text-sm text-warning-700">
-            No signature on file. Upload your signature before approving minutes.
-          </p>
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-warning-50 border border-warning-200">
+          <div className="w-9 h-9 rounded-lg bg-warning-100 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle size={18} className="text-warning-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-warning-800">No signature on file</p>
+            <p className="text-xs text-warning-700 mt-0.5">Upload your signature before approving minutes.</p>
+          </div>
+          <Link to="/chairperson/signature" className="text-xs font-medium text-warning-700 hover:text-warning-800 flex items-center gap-1 flex-shrink-0">
+            Upload <ArrowRight size={12} />
+          </Link>
         </div>
       )}
 
-      <Card className="p-4">
+      <div className="grid grid-cols-2 gap-4">
+        <KpiCard label="Pending" value={items.length} icon={Clock} accent="bg-warning-50 text-warning-600" />
+        <KpiCard label="Signature" value={signature ? 'Ready' : 'Missing'} icon={PenTool} accent={signature ? 'bg-success-50 text-success-600' : 'bg-error-50 text-error-500'} />
+      </div>
+
+      <Card className="p-6">
+        <SectionHeader title="Approval Queue" />
         {items.length === 0 ? (
           <EmptyState icon={<CheckCircle size={24} />} title="No pending approvals" message="All minutes have been reviewed." />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-1">
             {items.map((m: any) => (
-              <div key={m.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-neutral-100">
-                <div className="min-w-0">
+              <div key={m.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 -mx-3 rounded-xl hover:bg-neutral-50 transition-colors">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <p className="font-semibold text-neutral-800">{m.title}</p>
+                    <p className="text-sm font-semibold text-neutral-800">{m.title}</p>
                     {m.meeting_type === 'executive' && (
                       <span className="text-2xs font-bold uppercase text-secondary-600 bg-secondary-50 px-1.5 py-0.5 rounded">Executive</span>
                     )}
                   </div>
-                  <p className="text-sm text-neutral-500">{formatDate(m.meeting_date)} - {m.attendees} attendees</p>
-                  <p className="text-xs text-neutral-400 mt-1">Prepared by {m.prepared_by}</p>
+                  <p className="text-xs text-neutral-400">{formatDate(m.meeting_date)} · {m.attendees} attendees · By {m.prepared_by}</p>
                 </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <Button size="sm" variant="ghost" onClick={() => setViewingMinute(m)}><Eye size={14} /> View</Button>
-                  <Button size="sm" onClick={() => setAction({ id: m.id, type: 'approve' })} disabled={!signature}>
-                    <CheckCircle size={14} /> Approve
-                  </Button>
-                  <Button size="sm" variant="danger" onClick={() => setAction({ id: m.id, type: 'reject' })}>
-                    <XCircle size={14} /> Reject
-                  </Button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button onClick={() => setViewingMinute(m)} className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"><Eye size={15} /></button>
+                  <Button size="sm" onClick={() => setAction({ id: m.id, type: 'approve' })} disabled={!signature}><CheckCircle size={13} /> Approve</Button>
+                  <Button size="sm" variant="danger" onClick={() => setAction({ id: m.id, type: 'reject' })}><XCircle size={13} /> Reject</Button>
                 </div>
               </div>
             ))}
@@ -1194,11 +1419,8 @@ export function ApproveMinutes() {
         )}
       </Card>
 
-      {viewingMinute && (
-        <MinuteViewModal minute={viewingMinute} onClose={() => setViewingMinute(null)} />
-      )}
+      {viewingMinute && <MinuteViewModal minute={viewingMinute} onClose={() => setViewingMinute(null)} />}
 
-      {/* Approve confirmation */}
       <ConfirmDialog
         open={action?.type === 'approve'}
         onClose={() => setAction(null)}
@@ -1208,7 +1430,6 @@ export function ApproveMinutes() {
         confirmLabel="Approve"
       />
 
-      {/* Reject dialog with notes */}
       <Modal
         open={action?.type === 'reject'}
         onClose={() => { setAction(null); setRejectNotes(''); }}
@@ -1216,14 +1437,7 @@ export function ApproveMinutes() {
         size="md"
       >
         <div className="space-y-4">
-          <Textarea
-            label="Rejection notes (required)"
-            rows={4}
-            value={rejectNotes}
-            onChange={(e) => setRejectNotes(e.target.value)}
-            placeholder="Explain why these minutes are being rejected..."
-            required
-          />
+          <Textarea label="Rejection notes (required)" rows={4} value={rejectNotes} onChange={(e) => setRejectNotes(e.target.value)} placeholder="Explain why these minutes are being rejected..." required />
           <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={() => { setAction(null); setRejectNotes(''); }}>Cancel</Button>
             <Button variant="danger" disabled={!rejectNotes.trim()} onClick={() => action && rejectMut.mutate({ id: action.id, notes: rejectNotes })}>
@@ -1236,28 +1450,51 @@ export function ApproveMinutes() {
   );
 }
 
-// ============================================================
-// Office Dashboard
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  OFFICE DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════════
 export function OfficeDashboard() {
+  const { user } = useAuth();
   const { data, isLoading } = useQuery({ queryKey: queryKeys.officeDashboard, queryFn: () => mockOffice.dashboard() });
   if (isLoading) return <LoadingState />;
   const d = data!;
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  })();
+
   return (
-    <div>
-      <PageHeader title="Office Dashboard" subtitle="Office operations and member services" icon={<LayoutDashboard size={20} />} />
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <StatCard label="Total Members" value={d.total_members} icon={<Users size={18} />} />
-        <StatCard label="Pending Applications" value={d.pending_applications} icon={<Clock size={18} />} color="warning" />
-        <StatCard label="Pending Documents" value={d.pending_documents} icon={<FileText size={18} />} color="secondary" />
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900 tracking-tight">{greeting}, {user?.name?.split(' ')[0] ?? 'Office'}</h1>
+          <p className="mt-1 text-sm text-neutral-500">Office operations and member services</p>
+        </div>
+        <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2">
+          <div className="w-9 h-9 rounded-full bg-neutral-600 text-white text-sm font-bold flex items-center justify-center">
+            {initials(user?.name ?? 'OF')}
+          </div>
+          <div className="hidden sm:block">
+            <p className="text-sm font-semibold text-neutral-800">{user?.name ?? 'Office'}</p>
+            <p className="text-xs text-neutral-400">Office Staff</p>
+          </div>
+        </div>
       </div>
-      <Card className="p-5 mt-4">
-        <h3 className="text-sm font-bold mb-3">Recent Activities</h3>
-        <div className="space-y-2">
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <KpiCard label="Total Members" value={d.total_members} icon={Users} accent="bg-primary-50 text-primary-600" />
+        <KpiCard label="Pending Applications" value={d.pending_applications} icon={Clock} accent="bg-warning-50 text-warning-600" />
+        <KpiCard label="Pending Documents" value={d.pending_documents} icon={FileText} accent="bg-secondary-50 text-secondary-600" />
+      </div>
+
+      <Card className="p-6">
+        <SectionHeader title="Recent Activities" />
+        <div className="space-y-1">
           {d.recent_activities.map((a: any, i: number) => (
-            <div key={i} className="flex items-center justify-between py-2 border-b border-neutral-50 last:border-0">
+            <div key={i} className="flex items-center justify-between p-2.5 -mx-2.5 rounded-xl hover:bg-neutral-50 transition-colors">
               <p className="text-sm text-neutral-700">{a.description}</p>
-              <span className="text-xs text-neutral-400">{relativeTime(a.date)}</span>
+              <span className="text-xs text-neutral-400 whitespace-nowrap">{relativeTime(a.date)}</span>
             </div>
           ))}
         </div>
