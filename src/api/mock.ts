@@ -19,6 +19,7 @@ import {
   demoMediaAssets, demoRegistrationApplicants,
   demoMemos, demoMemoTemplates, demoOrgSettings,
   demoPayouts, demoEligibleMembers,
+  demoImportBatches, demoImportBatchRows, demoUnmatchedTransactions,
 } from './demo-data';
 import type {
   Paginated, AuthUser, LoginResponse,
@@ -204,6 +205,9 @@ export const mockTreasurer = {
   getPayouts: () => tryApi(() => treasurerApi.getPayouts(), demoPayouts),
   createPayout: (data: any) => tryApi(() => treasurerApi.createPayout(data), { ...data, id: 'po-new-' + Date.now(), reference: 'PAY-' + Date.now(), status: 'pending', created_at: new Date().toISOString() } as any),
   getEligibleMembers: (payoutType: string) => tryApi(() => treasurerApi.getEligibleMembers(payoutType as any), demoEligibleMembers),
+  getImportHistory: () => tryApi(() => Promise.reject(new Error('Not configured')), demoImportBatches),
+  getImportBatchDetail: (id: string) => tryApi(() => Promise.reject(new Error('Not configured')),
+    demoImportBatchRows.filter((r: any) => r.batch_id === id)),
 };
 
 export const mockAdmin = {
@@ -245,6 +249,9 @@ export const mockAdmin = {
   getUnmatchedPayments: () => tryApi(() => adminApi.getUnmatchedPayments(),
     demoBankTransactions.filter(t => !t.matched).map((t, i) => ({ ...demoContributions[i % demoContributions.length], id: t.id, reference: t.reference, status: 'pending' as const }))),
   matchPayment: (id: string, _memberId: string) => tryApi(() => adminApi.matchPayment(id, _memberId), { message: 'Payment matched successfully' }),
+  getBankUnmatched: () => tryApi(() => Promise.reject(new Error('Not configured')), demoUnmatchedTransactions),
+  reconcileBankUnmatched: (_id: string, _data: any) => tryApi(() => Promise.reject(new Error('Not configured')),
+    { message: 'Transaction reconciled' } as any),
   getNotifications: () => tryApi(() => adminApi.getNotifications(), demoNotifications),
   sendBulkSms: (_data: any) => tryApi(() => adminApi.sendBulkSms(_data), { message: 'SMS sent to 245 recipients' }),
   getEvents: () => tryApi(() => adminApi.getEvents(), demoEvents),

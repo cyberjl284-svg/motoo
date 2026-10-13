@@ -273,6 +273,48 @@ export const demoBankTransactions: BankTransaction[] = [
   { id: 'bt5', date: daysAgo(7), description: 'M-Pesa Paybill Transfer', reference: 'MPESA100247', amount: 3000, type: 'credit', matched: false },
 ];
 
+export const demoImportBatches = [
+  {
+    id: 'bch1', file_name: 'coop_statement_oct_2026.xlsx', source_name: 'Co-op Bank',
+    status: 'completed', imported_at: daysAgo(1), total_rows: 145,
+    new_members: 8, matched_members: 127, duplicates: 5, unmatched: 3, invalid_phone: 2,
+    total_amount: 285400, failures: 0,
+  },
+  {
+    id: 'bch2', file_name: 'mpesa_statement_sep_2026.xlsx', source_name: 'M-Pesa',
+    status: 'completed', imported_at: daysAgo(7), total_rows: 89,
+    new_members: 3, matched_members: 82, duplicates: 2, unmatched: 1, invalid_phone: 1,
+    total_amount: 168200, failures: 0,
+  },
+  {
+    id: 'bch3', file_name: 'coop_statement_aug_2026.xlsx', source_name: 'Co-op Bank',
+    status: 'completed', imported_at: daysAgo(14), total_rows: 210,
+    new_members: 12, matched_members: 190, duplicates: 5, unmatched: 2, invalid_phone: 1,
+    total_amount: 412600, failures: 0,
+  },
+  {
+    id: 'bch4', file_name: 'bank_transfer_q3.xlsx', source_name: 'KCB',
+    status: 'failed', imported_at: daysAgo(20), total_rows: 0,
+    new_members: 0, matched_members: 0, duplicates: 0, unmatched: 0, invalid_phone: 0,
+    total_amount: 0, failures: 1,
+  },
+];
+
+export const demoImportBatchRows = [
+  { id: 'r1', batch_id: 'bch1', row_number: 1, name: 'John Kamau', phone: '+254722456789', reference: 'MPESA100245', amount: 2000, status: 'matched', match_status: 'matched', member_id: 'm2', member_name: 'John Kamau Njoroge' },
+  { id: 'r2', batch_id: 'bch1', row_number: 2, name: 'Mary Wambui', phone: '+254733567890', reference: 'MPESA100246', amount: 2000, status: 'matched', match_status: 'matched', member_id: 'm3', member_name: 'Mary Wambui Kariuki' },
+  { id: 'r3', batch_id: 'bch1', row_number: 3, name: 'Patrick Maina', phone: '+254712111222', reference: 'TRF009876', amount: 5000, status: 'new_member', match_status: 'matched', member_id: 'm9', member_name: 'Patrick Maina' },
+  { id: 'r4', batch_id: 'bch1', row_number: 4, name: '', phone: '', reference: 'TRF009877', amount: 3000, status: 'skipped', match_status: 'no_phone', member_id: null, member_name: null },
+  { id: 'r5', batch_id: 'bch1', row_number: 5, name: 'Grace Njeri', phone: '+254711789012', reference: 'MPESA100247', amount: 3000, status: 'skipped', match_status: 'duplicate', member_id: 'm5', member_name: 'Grace Njeri Wangari' },
+  { id: 'r6', batch_id: 'bch1', row_number: 6, name: '', phone: '', reference: 'CHQ001234', amount: 0, status: 'unmatched', match_status: 'unmatched', member_id: null, member_name: null },
+];
+
+export const demoUnmatchedTransactions = [
+  { id: 'um1', bank_transaction_id: 'bt3', reference: 'TRF009876', narration: 'Bank Transfer - Unknown Sender', amount: 5000, date: daysAgo(3), status: 'pending', reason: 'unknown_member', phone_extracted: '+254700000000' },
+  { id: 'um2', bank_transaction_id: 'bt5', reference: 'MPESA100247', narration: 'M-Pesa Paybill Transfer - Grace Njeri', amount: 3000, date: daysAgo(7), status: 'pending', reason: 'ambiguous_member', phone_extracted: '+254711789012' },
+  { id: 'um3', bank_transaction_id: 'bt8', reference: 'TRF009881', narration: 'Bank Deposit - No phone', amount: 15000, date: daysAgo(10), status: 'investigating', reason: 'unknown_member', phone_extracted: null },
+];
+
 export const demoMinutes: MeetingMinutes[] = [
   { id: 'min1', title: 'Q3 Members Meeting Minutes', meeting_date: daysAgo(15), meeting_type: 'general', status: 'approved', prepared_by: 'Lucy Kamau', reviewed_by: 'Lucy Kamau', approved_by: 'Dr. Robert Kibochi', content: 'Minutes of the Q3 members meeting held at Kerugoya County Hall...', attendees: 180 },
   { id: 'min2', title: 'Executive Committee Meeting - October', meeting_date: daysAgo(7), meeting_type: 'executive', status: 'submitted_to_secretary', prepared_by: 'Samuel Mbugua', content: 'Minutes of the executive committee meeting...', attendees: 12 },

@@ -50,6 +50,8 @@ import TreasurerSettings from '@/pages/treasurer/TreasurerSettings';
 import { PenaltyWalletPage, DonationWalletPage, OperationalWalletPage } from '@/pages/treasurer/WalletPages';
 import { BankStatementPage, BookBalanceImportPage, BookBalancePage, WalletReportsPage, ExpensesPage } from '@/pages/treasurer/TreasurerPages';
 import { BankStatementImportPage } from '@/pages/treasurer/BankStatementImport';
+import { ImportHistoryPage } from '@/pages/treasurer/ImportHistory';
+import { BankUnmatchedPage } from '@/pages/admin/BankUnmatched';
 
 // Admin pages
 import AdminDashboard from '@/pages/admin/AdminDashboard';
@@ -154,6 +156,7 @@ export default function App() {
               <Route path="/treasurer/bank-sync" element={<BankSync />} />
               <Route path="/treasurer/bank-statement" element={<BankStatementPage />} />
               <Route path="/treasurer/bank-statement-import" element={<BankStatementImportPage />} />
+              <Route path="/treasurer/import-history" element={<ImportHistoryPage />} />
               <Route path="/treasurer/book-balance-import" element={<BookBalanceImportPage />} />
               <Route path="/treasurer/book-balance" element={<BookBalancePage />} />
               <Route path="/treasurer/wallet-reports" element={<WalletReportsPage />} />
@@ -176,6 +179,7 @@ export default function App() {
               <Route path="/admin/beneficiaries" element={<AdminBeneficiaries />} />
               <Route path="/admin/payments" element={<AdminPayments />} />
               <Route path="/admin/unmatched" element={<AdminUnmatchedPayments />} />
+              <Route path="/admin/bank-unmatched" element={<BankUnmatchedPage />} />
               <Route path="/admin/sms" element={<AdminBulkSms />} />
               <Route path="/admin/events" element={<AdminEvents />} />
               <Route path="/admin/documents" element={<AdminDocuments />} />
@@ -261,6 +265,7 @@ export default function App() {
               <Route path="/super-admin/beneficiaries" element={<AdminBeneficiaries />} />
               <Route path="/super-admin/payments" element={<AdminPayments />} />
               <Route path="/super-admin/unmatched" element={<AdminUnmatchedPayments />} />
+              <Route path="/super-admin/bank-unmatched" element={<BankUnmatchedPage />} />
               <Route path="/super-admin/sms" element={<AdminBulkSms />} />
               <Route path="/super-admin/events" element={<AdminEvents />} />
               <Route path="/super-admin/documents" element={<AdminDocuments />} />

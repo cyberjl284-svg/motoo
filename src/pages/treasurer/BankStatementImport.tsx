@@ -5,7 +5,7 @@ import {
   Upload, FileSpreadsheet, AlertTriangle, CheckCircle, XCircle,
   Loader2, ArrowRight, Phone, User, Calendar, Hash, Download,
 } from 'lucide-react';
-import { Card, PageHeader, Button, Badge } from '@/components/ui';
+import { Card, Button, Badge } from '@/components/ui';
 import { formatCurrency, formatDate, classNames, downloadCSV } from '@/lib/format';
 import { importsApi, type BankStatementRow, type ImportBatchResponse } from '@/api/imports';
 import { queryKeys } from '@/lib/query';
@@ -475,318 +475,217 @@ export function BankStatementImportPage() {
   const previewRows = parseResult?.rows.slice(0, 30) || [];
 
   return (
-    <div>
-      <PageHeader
-        title="Import Bank Statement"
-        subtitle="Upload a bank statement spreadsheet to parse, preview, and import transactions"
-        icon={<Upload size={20} />}
-        action={
-          parseResult && (
-            <Button
-              variant="secondary"
-              onClick={() =>
-                downloadCSV('bank-statement-preview.csv', parseResult.rows.map((r) => ({
-                  date: r.date,
-                  name: r.name,
-                  phone: r.phone,
-                  reference: r.reference,
-                  amount: r.amount,
-                  mpesa_code: r.mpesaCode,
-                  details: r.rawDetails,
-                })))
-              }
-            >
-              <Download size={16} /> Export Preview
-            </Button>
-          )
-        }
-      />
-
-      <div className="space-y-4">
-        {/* File Upload */}
-        {!parseResult && !importResult && (
-          <Card className="p-6">
-            <div
-              className="border-2 border-dashed border-neutral-200 rounded-xl p-8 text-center hover:border-primary-300 transition-colors cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const f = e.dataTransfer.files?.[0];
-                if (f) handleFileSelect(f);
-              }}
-              onDragOver={(e) => e.preventDefault()}
-            >
-              {parsing ? (
-                <>
-                  <Loader2 size={32} className="mx-auto text-primary-500 mb-3 animate-spin" />
-                  <p className="text-sm text-neutral-500">Parsing spreadsheet...</p>
-                </>
-              ) : (
-                <>
-                  <FileSpreadsheet size={32} className="mx-auto text-neutral-300 mb-3" />
-                  <p className="text-sm text-neutral-500 mb-2">
-                    Drop your .xlsx or .xls file here, or click to browse
-                  </p>
-                  <p className="text-xs text-neutral-400">
-                    The file is parsed in your browser. No data is uploaded until you press Import.
-                  </p>
-                </>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleFileSelect(f);
-                }}
-                className="hidden"
-              />
-            </div>
-            {parseError && (
-              <div className="mt-4 p-4 rounded-xl bg-error-50 border border-error-200">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle size={18} className="text-error-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-error-700">Could not parse file</p>
-                    <p className="text-xs text-error-600 mt-1">{parseError}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </Card>
-        )}
-
-        {/* Parse Summary */}
-        {parseResult && !importResult && (
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <CheckCircle size={18} className="text-success-600" />
-                <h3 className="text-sm font-bold text-neutral-900">File Parsed Successfully</h3>
-              </div>
-              <button
-                onClick={handleReset}
-                className="text-xs text-neutral-500 hover:text-neutral-700 font-medium"
-              >
-                Choose different file
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
-              <div className="bg-neutral-50 rounded-lg p-3">
-                <p className="text-2xs text-neutral-400 font-medium">Valid Transactions</p>
-                <p className="text-lg font-bold text-neutral-900">{parseResult.rows.length}</p>
-              </div>
-              <div className="bg-neutral-50 rounded-lg p-3">
-                <p className="text-2xs text-neutral-400 font-medium">Total Amount</p>
-                <p className="text-lg font-bold text-success-600">{formatCurrency(parseResult.totalAmount)}</p>
-              </div>
-              <div className="bg-neutral-50 rounded-lg p-3">
-                <p className="text-2xs text-neutral-400 font-medium">Duplicates Removed</p>
-                <p className="text-lg font-bold text-neutral-700">{parseResult.duplicatesRemoved}</p>
-              </div>
-              <div className="bg-neutral-50 rounded-lg p-3">
-                <p className="text-2xs text-neutral-400 font-medium">Skipped Rows</p>
-                <p className="text-lg font-bold text-warning-600">{parseResult.skippedRows}</p>
-              </div>
-              <div className="bg-neutral-50 rounded-lg p-3">
-                <p className="text-2xs text-neutral-400 font-medium">Sheet / Header Row</p>
-                <p className="text-lg font-bold text-neutral-700">
-                  {parseResult.sheetName.slice(0, 12)} / Row {parseResult.headerRow}
-                </p>
-              </div>
-            </div>
-
-            {parseResult.rows.length > 0 && (
-              <>
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-bold text-neutral-700">
-                    Preview ({Math.min(previewRows.length, 30)} of {parseResult.rows.length})
-                  </h4>
-                  <Badge status="confirmed">
-                    {Math.ceil(parseResult.rows.length / 200)} batch{Math.ceil(parseResult.rows.length / 200) > 1 ? 'es' : ''}
-                  </Badge>
-                </div>
-                <div className="overflow-x-auto border border-neutral-100 rounded-xl">
-                  <table className="w-full text-xs">
-                    <thead className="bg-neutral-50 text-neutral-500">
-                      <tr>
-                        <th className="text-left px-3 py-2 font-medium">
-                          <span className="flex items-center gap-1"><Calendar size={12} /> Date</span>
-                        </th>
-                        <th className="text-left px-3 py-2 font-medium">
-                          <span className="flex items-center gap-1"><User size={12} /> Name</span>
-                        </th>
-                        <th className="text-left px-3 py-2 font-medium">
-                          <span className="flex items-center gap-1"><Phone size={12} /> Phone</span>
-                        </th>
-                        <th className="text-left px-3 py-2 font-medium">
-                          <span className="flex items-center gap-1"><Hash size={12} /> Reference</span>
-                        </th>
-                        <th className="text-right px-3 py-2 font-medium">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-50">
-                      {previewRows.map((tx, i) => (
-                        <tr key={i} className="hover:bg-neutral-50">
-                          <td className="px-3 py-2 text-neutral-600">{formatDate(tx.date)}</td>
-                          <td className="px-3 py-2 text-neutral-800 font-medium">{tx.name}</td>
-                          <td className="px-3 py-2 text-neutral-600 font-mono">{tx.phone}</td>
-                          <td className="px-3 py-2 text-neutral-400 font-mono">{tx.reference}</td>
-                          <td className="px-3 py-2 text-right font-semibold text-success-600">
-                            {formatCurrency(tx.amount)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {parseResult.rows.length > 30 && (
-                  <p className="text-xs text-neutral-400 mt-2 text-center">
-                    Showing first 30 of {parseResult.rows.length} transactions
-                  </p>
-                )}
-
-                <div className="flex gap-3 mt-4">
-                  <Button
-                    onClick={handleImport}
-                    disabled={importing}
-                    className="flex-1"
-                  >
-                    {importing ? (
-                      <>
-                        <Loader2 size={16} className="animate-spin" />
-                        Importing batch {currentChunk} of {totalChunks}...
-                      </>
-                    ) : (
-                      <>
-                        <ArrowRight size={16} />
-                        Import {parseResult.rows.length} transactions
-                      </>
-                    )}
-                  </Button>
-                  <Button variant="secondary" onClick={handleReset} disabled={importing}>
-                    Cancel
-                  </Button>
-                </div>
-              </>
-            )}
-
-            {parseResult.rows.length === 0 && (
-              <div className="text-center py-6">
-                <AlertTriangle size={24} className="mx-auto text-warning-400 mb-2" />
-                <p className="text-sm text-neutral-600">
-                  No valid transactions found. The parser needs rows with a date, positive credit/deposit
-                  amount, and a Kenyan phone number in the narration or a phone column.
-                </p>
-              </div>
-            )}
-          </Card>
-        )}
-
-        {/* Import Error */}
-        {importError && (
-          <Card className="p-5">
-            <div className="flex items-start gap-2">
-              <XCircle size={18} className="text-error-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-error-700">Import failed</p>
-                <p className="text-xs text-error-600 mt-1">{importError}</p>
-                <Button variant="secondary" size="sm" className="mt-3" onClick={handleReset}>
-                  Try Again
-                </Button>
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {/* Import Results */}
-        {importResult && (
-          <Card className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <CheckCircle size={20} className="text-success-600" />
-              <h3 className="text-sm font-bold text-neutral-900">Import Complete</h3>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-              <div className="bg-success-50 rounded-lg p-3">
-                <p className="text-2xs text-success-600 font-medium">New Members Created</p>
-                <p className="text-xl font-bold text-success-700">{importResult.totalNewMembers}</p>
-              </div>
-              <div className="bg-primary-50 rounded-lg p-3">
-                <p className="text-2xs text-primary-600 font-medium">Existing Members Matched</p>
-                <p className="text-xl font-bold text-primary-700">{importResult.totalMatched}</p>
-              </div>
-              <div className="bg-neutral-50 rounded-lg p-3">
-                <p className="text-2xs text-neutral-500 font-medium">Contributions Created</p>
-                <p className="text-xl font-bold text-neutral-800">{importResult.totalContributionsCreated}</p>
-              </div>
-              <div className="bg-neutral-50 rounded-lg p-3">
-                <p className="text-2xs text-neutral-500 font-medium">Contributions Updated</p>
-                <p className="text-xl font-bold text-neutral-800">{importResult.totalContributionsUpdated}</p>
-              </div>
-              <div className="bg-neutral-50 rounded-lg p-3">
-                <p className="text-2xs text-neutral-500 font-medium">Duplicates Skipped</p>
-                <p className="text-xl font-bold text-neutral-600">{importResult.totalDuplicates}</p>
-              </div>
-              <div className="bg-warning-50 rounded-lg p-3">
-                <p className="text-2xs text-warning-600 font-medium">Unmatched</p>
-                <p className="text-xl font-bold text-warning-700">{importResult.totalUnmatched}</p>
-              </div>
-              <div className="bg-neutral-50 rounded-lg p-3">
-                <p className="text-2xs text-neutral-500 font-medium">Total Imported</p>
-                <p className="text-xl font-bold text-neutral-800">{importResult.totalImported}</p>
-              </div>
-              <div className="bg-success-50 rounded-lg p-3">
-                <p className="text-2xs text-success-600 font-medium">Total Amount</p>
-                <p className="text-xl font-bold text-success-700">{formatCurrency(importResult.totalAmount)}</p>
-              </div>
-            </div>
-
-            {importResult.batchIds.length > 0 && (
-              <div className="mb-4 p-3 bg-neutral-50 rounded-lg">
-                <p className="text-xs text-neutral-500">
-                  Batch ID{importResult.batchIds.length > 1 ? 's (last shown in UI)' : ''}:{' '}
-                  <span className="font-mono text-neutral-700">
-                    {importResult.batchIds[importResult.batchIds.length - 1]}
-                  </span>
-                </p>
-              </div>
-            )}
-
-            {importResult.allFailures.length > 0 && (
-              <div className="mb-4">
-                <p className="text-xs font-bold text-error-600 mb-2">
-                  Row Failures ({importResult.allFailures.length})
-                </p>
-                <div className="max-h-32 overflow-y-auto border border-error-100 rounded-lg">
-                  {importResult.allFailures.slice(0, 20).map((f, i) => (
-                    <div key={i} className="px-3 py-1.5 text-xs text-error-600 border-b border-error-50 last:border-0">
-                      Row {f.row}: {f.reason}
-                    </div>
-                  ))}
-                  {importResult.allFailures.length > 20 && (
-                    <p className="px-3 py-1.5 text-xs text-neutral-400">
-                      ...and {importResult.allFailures.length - 20} more
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="p-3 rounded-lg bg-secondary-50 border border-secondary-100 mb-4">
-              <p className="text-xs text-secondary-700">
-                New members receive a default password of <span className="font-mono font-bold">Member2026</span> and
-                must change it on first login. Contribution allocation starts in the transaction month and spreads
-                forward at the configured monthly amount.
-              </p>
-            </div>
-
-            <Button onClick={handleReset}>Import Another File</Button>
-          </Card>
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Import Bank Statement</h1>
+          <p className="mt-1 text-sm text-neutral-500">Upload a bank statement spreadsheet to parse, preview, and import transactions</p>
+        </div>
+        {parseResult && (
+          <Button variant="secondary" onClick={() => downloadCSV('bank-statement-preview.csv', parseResult.rows.map((r) => ({ date: r.date, name: r.name, phone: r.phone, reference: r.reference, amount: r.amount, mpesa_code: r.mpesaCode, details: r.rawDetails })))}>
+            <Download size={15} /> Export Preview
+          </Button>
         )}
       </div>
+
+      {/* File Upload */}
+      {!parseResult && !importResult && (
+        <Card className="p-8">
+          <div
+            className="border-2 border-dashed border-neutral-200 rounded-n26-card p-12 text-center hover:border-primary-300 transition-colors cursor-pointer"
+            onClick={() => fileInputRef.current?.click()}
+            onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleFileSelect(f); }}
+            onDragOver={(e) => e.preventDefault()}
+          >
+            {parsing ? (
+              <>
+                <Loader2 size={36} className="mx-auto text-primary-500 mb-4 animate-spin" />
+                <p className="text-sm text-neutral-500">Parsing spreadsheet...</p>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-primary-50 flex items-center justify-center mx-auto mb-4">
+                  <FileSpreadsheet size={28} className="text-primary-600" />
+                </div>
+                <p className="text-sm font-medium text-neutral-700 mb-2">
+                  Drop your .xlsx or .xls file here, or click to browse
+                </p>
+                <p className="text-xs text-neutral-400 max-w-md mx-auto">
+                  The file is parsed in your browser. No data is uploaded until you press Import.
+                  The parser looks for Date, Narration/Details, and Credit/Amount columns.
+                </p>
+              </>
+            )}
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }} className="hidden" />
+          </div>
+          {parseError && (
+            <div className="mt-4 p-4 rounded-xl bg-error-50 border border-error-200 flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-error-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={18} className="text-error-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-error-700">Could not parse file</p>
+                <p className="text-xs text-error-600 mt-1">{parseError}</p>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Parse Summary */}
+      {parseResult && !importResult && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-success-50 flex items-center justify-center">
+                <CheckCircle size={20} className="text-success-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-neutral-900">File Parsed Successfully</h3>
+                <p className="text-xs text-neutral-400">{parseResult.sheetName} · Header at row {parseResult.headerRow} · {parseResult.rawRowCount} raw rows</p>
+              </div>
+            </div>
+            <button onClick={handleReset} className="text-xs text-neutral-500 hover:text-neutral-700 font-medium">Choose different file</button>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+            {[
+              { label: 'Valid Transactions', value: String(parseResult.rows.length), accent: 'text-neutral-900' },
+              { label: 'Total Amount', value: formatCurrency(parseResult.totalAmount), accent: 'text-success-600' },
+              { label: 'Duplicates Removed', value: String(parseResult.duplicatesRemoved), accent: 'text-neutral-700' },
+              { label: 'Skipped Rows', value: String(parseResult.skippedRows), accent: 'text-warning-600' },
+              { label: 'Batches', value: String(Math.ceil(parseResult.rows.length / 200)), accent: 'text-neutral-700' },
+            ].map(s => (
+              <div key={s.label} className="bg-neutral-50 rounded-xl p-3">
+                <p className="text-2xs text-neutral-400 font-medium uppercase tracking-wider">{s.label}</p>
+                <p className={classNames('text-lg font-bold mt-1', s.accent)}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {parseResult.rows.length > 0 && (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-bold text-neutral-700">Preview ({Math.min(previewRows.length, 30)} of {parseResult.rows.length})</h4>
+                <Badge status="confirmed">{Math.ceil(parseResult.rows.length / 200)} batch{Math.ceil(parseResult.rows.length / 200) > 1 ? 'es' : ''}</Badge>
+              </div>
+              <div className="overflow-x-auto -mx-6 px-6">
+                <table className="w-full min-w-[640px]">
+                  <thead>
+                    <tr className="border-b border-neutral-100">
+                      <th className="text-left py-3 px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider">Date</th>
+                      <th className="text-left py-3 px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider">Name</th>
+                      <th className="text-left py-3 px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider">Phone</th>
+                      <th className="text-left py-3 px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider">Reference</th>
+                      <th className="text-right py-3 px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-50">
+                    {previewRows.map((tx, i) => (
+                      <tr key={i} className="hover:bg-neutral-50/60 transition-colors">
+                        <td className="py-3 px-2 text-sm text-neutral-500 whitespace-nowrap">{formatDate(tx.date)}</td>
+                        <td className="py-3 px-2 text-sm font-medium text-neutral-800">{tx.name}</td>
+                        <td className="py-3 px-2 text-sm text-neutral-500 font-mono">{tx.phone}</td>
+                        <td className="py-3 px-2 text-xs text-neutral-400 font-mono">{tx.reference}</td>
+                        <td className="py-3 px-2 text-right text-sm font-semibold text-success-600 whitespace-nowrap">{formatCurrency(tx.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {parseResult.rows.length > 30 && <p className="text-xs text-neutral-400 mt-2 text-center">Showing first 30 of {parseResult.rows.length} transactions</p>}
+
+              <div className="flex gap-3 mt-5 pt-4 border-t border-neutral-100">
+                <Button onClick={handleImport} disabled={importing} className="flex-1">
+                  {importing ? (<><Loader2 size={16} className="animate-spin" /> Importing batch {currentChunk} of {totalChunks}...</>) : (<><ArrowRight size={16} /> Import {parseResult.rows.length} transactions</>)}
+                </Button>
+                <Button variant="secondary" onClick={handleReset} disabled={importing}>Cancel</Button>
+              </div>
+            </>
+          )}
+
+          {parseResult.rows.length === 0 && (
+            <div className="text-center py-8">
+              <div className="w-12 h-12 rounded-xl bg-warning-50 flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle size={24} className="text-warning-500" />
+              </div>
+              <p className="text-sm text-neutral-600 max-w-md mx-auto">No valid transactions found. The parser needs rows with a date, positive credit/deposit amount, and a Kenyan phone number in the narration or a phone column.</p>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Import Error */}
+      {importError && (
+        <Card className="p-6">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-error-50 flex items-center justify-center flex-shrink-0">
+              <XCircle size={20} className="text-error-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-error-700">Import failed</p>
+              <p className="text-xs text-error-600 mt-1">{importError}</p>
+              <Button variant="secondary" size="sm" className="mt-3" onClick={handleReset}>Try Again</Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Import Results */}
+      {importResult && (
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-10 h-10 rounded-xl bg-success-50 flex items-center justify-center">
+              <CheckCircle size={20} className="text-success-600" />
+            </div>
+            <h3 className="text-base font-bold text-neutral-900">Import Complete</h3>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            {[
+              { label: 'New Members', value: importResult.totalNewMembers, bg: 'bg-success-50', text: 'text-success-700' },
+              { label: 'Matched', value: importResult.totalMatched, bg: 'bg-primary-50', text: 'text-primary-700' },
+              { label: 'Contributions Created', value: importResult.totalContributionsCreated, bg: 'bg-neutral-50', text: 'text-neutral-800' },
+              { label: 'Contributions Updated', value: importResult.totalContributionsUpdated, bg: 'bg-neutral-50', text: 'text-neutral-800' },
+              { label: 'Duplicates Skipped', value: importResult.totalDuplicates, bg: 'bg-neutral-50', text: 'text-neutral-600' },
+              { label: 'Unmatched', value: importResult.totalUnmatched, bg: 'bg-warning-50', text: 'text-warning-700' },
+              { label: 'Total Imported', value: importResult.totalImported, bg: 'bg-neutral-50', text: 'text-neutral-800' },
+              { label: 'Total Amount', value: formatCurrency(importResult.totalAmount), bg: 'bg-success-50', text: 'text-success-700' },
+            ].map(s => (
+              <div key={s.label} className={classNames('rounded-xl p-3', s.bg)}>
+                <p className={classNames('text-2xs font-medium uppercase tracking-wider', s.text, 'opacity-70')}>{s.label}</p>
+                <p className={classNames('text-xl font-bold mt-1', s.text)}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {importResult.batchIds.length > 0 && (
+            <div className="mb-4 p-3 bg-neutral-50 rounded-xl">
+              <p className="text-xs text-neutral-500">Batch ID{importResult.batchIds.length > 1 ? 's (last shown)' : ''}: <span className="font-mono text-neutral-700">{importResult.batchIds[importResult.batchIds.length - 1]}</span></p>
+            </div>
+          )}
+
+          {importResult.allFailures.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs font-bold text-error-600 mb-2">Row Failures ({importResult.allFailures.length})</p>
+              <div className="max-h-32 overflow-y-auto border border-error-100 rounded-xl">
+                {importResult.allFailures.slice(0, 20).map((f, i) => (
+                  <div key={i} className="px-3 py-1.5 text-xs text-error-600 border-b border-error-50 last:border-0">Row {f.row}: {f.reason}</div>
+                ))}
+                {importResult.allFailures.length > 20 && <p className="px-3 py-1.5 text-xs text-neutral-400">...and {importResult.allFailures.length - 20} more</p>}
+              </div>
+            </div>
+          )}
+
+          <div className="p-3 rounded-xl bg-secondary-50 border border-secondary-100 mb-4">
+            <p className="text-xs text-secondary-700">
+              New members receive a default password of <span className="font-mono font-bold">Member2026</span> and must change it on first login. Contribution allocation starts in the transaction month and spreads forward at the configured monthly amount.
+            </p>
+          </div>
+
+          <Button onClick={handleReset}>Import Another File</Button>
+        </Card>
+      )}
     </div>
   );
 }

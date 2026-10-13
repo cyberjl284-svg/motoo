@@ -52,6 +52,8 @@ export const queryKeys = {
   treasurerMemo: (id: string) => ['treasurer', 'memos', id] as const,
   treasurerSettings: ['treasurer', 'settings'] as const,
   treasurerPayouts: ['treasurer', 'payouts'] as const,
+  treasurerImportHistory: ['treasurer', 'import-history'] as const,
+  treasurerImportBatch: (id: string) => ['treasurer', 'import-history', id] as const,
   treasurerEligibleMembers: (payoutType: string) => ['treasurer', 'payouts', 'eligible', payoutType] as const,
 
   adminDashboard: ['admin', 'dashboard'] as const,
@@ -62,6 +64,7 @@ export const queryKeys = {
   adminDefaulters: ['admin', 'defaulters'] as const,
   adminPayments: (page: number) => ['admin', 'payments', page] as const,
   adminUnmatched: ['admin', 'unmatched'] as const,
+  adminBankUnmatched: ['admin', 'bank-unmatched'] as const,
   adminNotifications: ['admin', 'notifications'] as const,
   adminEvents: ['admin', 'events'] as const,
   adminDocuments: ['admin', 'documents'] as const,
